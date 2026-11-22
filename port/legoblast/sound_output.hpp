@@ -12,6 +12,9 @@ public:
     SoundOutput(const std::filesystem::path& root, unsigned track, bool smoke);
     ~SoundOutput();
     bool selectTrack(unsigned track);
+    void verifyWithoutGameTicks() const;
+    void setVolumes(unsigned music, unsigned effects);
+    void setMenuVoices(unsigned count);
     void tick(std::span<const SoundRequest> requests, bool paused, bool results, bool podium = false);
 
 private:

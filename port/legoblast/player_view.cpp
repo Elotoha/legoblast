@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
@@ -71,6 +72,7 @@ public:
             down(SDL_SCANCODE_KP_7), down(SDL_SCANCODE_KP_9),
             down(SDL_SCANCODE_KP_5) || down(SDL_SCANCODE_KP_RIGHTBRACE) || down(SDL_SCANCODE_RIGHTBRACKET),
             down(SDL_SCANCODE_KP_8), shared && down(SDL_SCANCODE_RIGHT)};
+        input[static_cast<std::size_t>(Control::Micro)].fire = down(SDL_SCANCODE_BACKSPACE);
         pressed_.fill(false);
         return input;
     }
@@ -189,7 +191,7 @@ Session makeSession(const std::filesystem::path& binary, const std::filesystem::
 }
 
 ViewResult view(const std::filesystem::path& root, const std::filesystem::path& spriteFile,
-         const std::filesystem::path& levelFile, bool smoke, MatchOptions options, unsigned& track,
+         const std::filesystem::path& levelFile, bool smoke, MatchOptions options, Preferences& prefs, SoundOutput& sound,
          const std::vector<ArenaEntry>& arenaList, bool useMenu = false, bool sharedKeyboard = false) {
     const auto binary = root / "binary";
     auto session = makeSession(binary, levelFile, options, arenaList);
@@ -215,6 +217,10 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
     const ReadyPanel ready(spriteFile.parent_path());
     if (smoke) {
         verifyKeyboardMapping(session);
+        ExtraScreens extra(spriteFile.parent_path(), prefs.gradient);
+        extra.intro(240);
+        extra.slideshow(1, 50);
+        extra.slideshow(2, 200);
         auto arenas = loadArenaList(binary);
         Menus menus(spriteFile.parent_path(), arenas);
         menus.render(15);
@@ -227,13 +233,18 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
     }
     unsigned smokeFrame = 0;
 
-    check(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD));
     Gamepads pads;
     Keyboard keyboard;
-    const auto audio = root / "audio";
-    SoundOutput sound(std::filesystem::is_directory(audio) ? audio : LEGOBLAST_AUDIO_PATH, track, smoke);
-    if (smoke && (!sound.selectTrack(3) || !sound.selectTrack(0) || !sound.selectTrack(track)))
-        throw std::runtime_error("music shortcut could not switch tracks");
+    sound.selectTrack(prefs.music);
+    if (smoke) {
+        sound.verifyWithoutGameTicks();
+        if (!sound.selectTrack(9))
+            throw std::runtime_error("menu music unavailable");
+        sound.setMenuVoices(2);
+        if (!sound.selectTrack(3) || !sound.selectTrack(0) || !sound.selectTrack(prefs.music))
+            throw std::runtime_error("music shortcut could not switch tracks");
+        sound.verifyWithoutGameTicks();
+    }
     SDL_Window* windowRaw{};
     SDL_Renderer* rendererRaw{};
     check(SDL_CreateWindowAndRenderer("LegoBlast", 3 * ScreenWidth, 3 * ScreenHeight,
@@ -260,10 +271,16 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
         while (SDL_PollEvent(&event)) {
             pads.update(event);
             keyboard.update(event);
-            if (useMenu && event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE)
-                return ViewResult::MainMenu;
+            if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE && !event.key.repeat) {
+                if (session.phase() == RoundPhase::Podium) {
+                    session.skipPodium();
+                    continue;
+                }
+                if (useMenu)
+                    return ViewResult::MainMenu;
+            }
             if (event.type == SDL_EVENT_QUIT ||
-                (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE))
+                (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE && !event.key.repeat))
                 running = false;
             if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
                 const auto key = event.key.scancode;
@@ -273,6 +290,11 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
                 case SDL_SCANCODE_HOME:
                 case SDL_SCANCODE_HELP: session.replayArena(); break;
                 case SDL_SCANCODE_P: session.togglePause(); break;
+                case SDL_SCANCODE_BACKSLASH:
+                case SDL_SCANCODE_NONUSBACKSLASH:
+                    if (session.reviewPodium())
+                        sound.tick(session.sounds(), false, false, true);
+                    break;
                 default: break;
                 }
                 if (key >= SDL_SCANCODE_F3 && key <= SDL_SCANCODE_F10 &&
@@ -280,10 +302,33 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
                     session.phase() != RoundPhase::Statistics) {
                     const unsigned requested = key == SDL_SCANCODE_F10 ? 0 : key - SDL_SCANCODE_F3 + 1;
                     const bool available = sound.selectTrack(requested);
-                    track = available ? requested : 0;
+                    prefs.music = available ? requested : 0;
                     shortcutMessage = requested == 0 ? "MUSIC OFF" : "MUSIC " + std::to_string(requested);
                     if (!available)
                         shortcutMessage += " UNAVAILABLE";
+                    messageUntil = SDL_GetTicks() + 2000;
+                }
+            }
+            if (event.type == SDL_EVENT_KEY_DOWN && session.phase() != RoundPhase::Podium &&
+                session.phase() != RoundPhase::Statistics) {
+                auto music = static_cast<int>(prefs.musicVolume);
+                auto effects = static_cast<int>(prefs.effectsVolume);
+                switch (event.key.scancode) {
+                case SDL_SCANCODE_MINUS:
+                case SDL_SCANCODE_KP_MINUS: --music; break;
+                case SDL_SCANCODE_EQUALS:
+                case SDL_SCANCODE_KP_PLUS: ++music; break;
+                case SDL_SCANCODE_KP_DIVIDE: --effects; break;
+                case SDL_SCANCODE_KP_MULTIPLY: ++effects; break;
+                default: break;
+                }
+                if (music != static_cast<int>(prefs.musicVolume) ||
+                    effects != static_cast<int>(prefs.effectsVolume)) {
+                    prefs.musicVolume = std::clamp(music, 0, 64);
+                    prefs.effectsVolume = std::clamp(effects, 0, 64);
+                    sound.setVolumes(prefs.musicVolume, prefs.effectsVolume);
+                    shortcutMessage = "MUSIC " + std::to_string(prefs.musicVolume) +
+                        "  SOUND " + std::to_string(prefs.effectsVolume);
                     messageUntil = SDL_GetTicks() + 2000;
                 }
             }
@@ -306,8 +351,10 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
                 input[static_cast<std::size_t>(Control::Joy1)].fire = join;
             }
             const auto previousPhase = session.phase();
+            const auto reviewing = session.reviewing();
             session.tick(input);
-            if (useMenu && previousPhase == RoundPhase::Statistics && session.phase() == RoundPhase::AwaitingPlayers)
+            if (useMenu && !reviewing && previousPhase == RoundPhase::Statistics &&
+                session.phase() == RoundPhase::AwaitingPlayers)
                 return ViewResult::MainMenu;
             sound.tick(session.sounds(), session.paused(),
                        session.phase() == RoundPhase::Result || session.phase() == RoundPhase::MatchComplete,
@@ -319,27 +366,13 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
             check(SDL_RenderClear(renderer.get()));
             const SDL_FRect fullScreen{0, 0, ScreenArt::Width, ScreenArt::Height};
             check(SDL_RenderTexture(renderer.get(), podiumTexture.get(), nullptr, &fullScreen));
-            if (session.phase() == RoundPhase::Statistics) {
-                const SDL_FRect table{30, 59, 260, 66};
-                check(SDL_SetRenderDrawColor(renderer.get(), 16, 16, 16, 255));
-                check(SDL_RenderFillRect(renderer.get(), &table));
-                check(SDL_SetRenderDrawColor(renderer.get(), 255, 255, 255, 255));
-                check(SDL_RenderDebugText(renderer.get(), 38, 62, "JOUEUR  VICTOIRES  BOMBES"));
-                float line = 72;
-                for (const auto slot : podium.ranking(session)) {
-                    const auto& player = session.players()[slot];
-                    const auto wins = session.score()[session.isTeamMatch() ? slot % 2 : slot];
-                    const auto label = std::to_string(slot + 1) + "       " + std::to_string(wins) +
-                        "          " + std::to_string(player.bombsPlanted);
-                    check(SDL_RenderDebugText(renderer.get(), 38, line, label.c_str()));
-                    line += 8;
-                }
-            }
             check(SDL_RenderPresent(renderer.get()));
             if (smoke) {
                 if (session.roundNumber() != 5 || session.score()[1] != 5 ||
                     session.players()[0].control != 0 || session.players()[1].control != 1)
                     throw std::runtime_error("match smoke test lost the score or controller");
+                session.skipPodium();
+                podium.render(session);
                 break;
             }
             SDL_Delay(2);
@@ -432,7 +465,7 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
     return ViewResult::Closed;
 }
 
-MenuResult choose(Menus& menus, const std::filesystem::path& audio) {
+MenuResult choose(Menus& menus, const ExtraScreens& extra, SoundOutput& soundtrack, bool showIntro) {
     SDL_Window* windowRaw{};
     SDL_Renderer* rendererRaw{};
     check(SDL_CreateWindowAndRenderer("LegoBlast", 3 * ScreenArt::Width, 3 * ScreenArt::Height,
@@ -443,10 +476,18 @@ MenuResult choose(Menus& menus, const std::filesystem::path& audio) {
                                           SDL_LOGICAL_PRESENTATION_INTEGER_SCALE));
     check(SDL_SetWindowMinimumSize(window.get(), ScreenArt::Width, ScreenArt::Height));
     auto screen = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, ScreenArt::Width, ScreenArt::Height);
-    SoundOutput soundtrack(audio, 9, false);
+    auto intro = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, 640, ScreenArt::Height);
+    soundtrack.selectTrack(9);
+    soundtrack.tick({}, false, false);
     Gamepads pads;
     Controls previous{};
     unsigned tick = 0;
+    unsigned introTick = showIntro ? 0 : 290;
+    unsigned slide = 0, slideTick = 0, idle = 0;
+    const auto nextSlide = [&] {
+        slide = (slide + 1) % 3;
+        slideTick = idle = 0;
+    };
     auto nextTick = SDL_GetTicks();
     while (true) {
         SDL_Event event{};
@@ -456,6 +497,24 @@ MenuResult choose(Menus& menus, const std::filesystem::path& audio) {
                 return MenuResult::Exit;
             if (event.type != SDL_EVENT_KEY_DOWN)
                 continue;
+            idle = 0;
+            if (introTick < 290) {
+                introTick = 290;
+                continue;
+            }
+            if (event.key.key == SDLK_SPACE && !event.key.repeat && menus.mainPage()) {
+                nextSlide();
+                continue;
+            }
+            if (slide) {
+                slide = 0;
+                continue;
+            }
+            if (menus.mainPage() && event.key.scancode >= SDL_SCANCODE_F1 &&
+                event.key.scancode <= SDL_SCANCODE_F4) {
+                soundtrack.setMenuVoices(event.key.scancode - SDL_SCANCODE_F1 + 1);
+                continue;
+            }
             auto result = MenuResult::Continue;
             switch (event.key.key) {
             case SDLK_UP: result = menus.handle(MenuInput::Up); break;
@@ -482,6 +541,12 @@ MenuResult choose(Menus& menus, const std::filesystem::path& audio) {
                     std::pair{&Buttons::left, MenuInput::Left}, std::pair{&Buttons::right, MenuInput::Right},
                     std::pair{&Buttons::fire, MenuInput::Fire}}) {
                 if (input[i].*button && !(previous[i].*button)) {
+                    idle = 0;
+                    if (introTick < 290 || slide) {
+                        introTick = 290;
+                        slide = 0;
+                        continue;
+                    }
                     const auto result = menus.handle(action);
                     if (result != MenuResult::Continue)
                         return result;
@@ -492,11 +557,17 @@ MenuResult choose(Menus& menus, const std::filesystem::path& audio) {
         const auto now = SDL_GetTicks();
         if (now >= nextTick) {
             nextTick = now + 20;
-            const auto picture = menus.render(++tick);
-            soundtrack.tick({}, false, false);
-            check(SDL_UpdateTexture(screen.get(), nullptr, picture.data(), ScreenArt::Width * 3));
+            const bool opening = introTick < 290;
+            if (!opening && !slide && menus.mainPage() && ++idle >= 1000)
+                nextSlide();
+            if (slide && slideTick >= 1000)
+                nextSlide();
+            const auto picture = opening ? extra.intro(++introTick) :
+                slide ? extra.slideshow(slide, ++slideTick) : menus.render(++tick);
+            auto* texture = opening ? intro.get() : screen.get();
+            check(SDL_UpdateTexture(texture, nullptr, picture.data(), (opening ? 640 : ScreenArt::Width) * 3));
             check(SDL_RenderClear(renderer.get()));
-            check(SDL_RenderTexture(renderer.get(), screen.get(), nullptr, nullptr));
+            check(SDL_RenderTexture(renderer.get(), texture, nullptr, nullptr));
             check(SDL_RenderPresent(renderer.get()));
         }
         SDL_Delay(2);
@@ -504,20 +575,43 @@ MenuResult choose(Menus& menus, const std::filesystem::path& audio) {
 }
 
 int launch(const std::filesystem::path& root, const std::filesystem::path& sprites,
-           const std::filesystem::path& level, bool smoke, MatchOptions options, unsigned track, bool useMenu) {
-    if (!useMenu) {
-        const auto arenas = loadArenaList(root / "binary");
-        view(root, sprites, level, smoke, options, track, arenas);
-        return 0;
-    }
+           const std::filesystem::path& level, bool smoke, MatchOptions options, std::optional<unsigned> track, bool useMenu) {
     check(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD));
     auto arenas = loadArenaList(root / "binary");
-    Menus menus(sprites.parent_path(), arenas);
     const auto audio = root / "audio";
-    while (choose(menus, std::filesystem::is_directory(audio) ? audio : LEGOBLAST_AUDIO_PATH) == MenuResult::Start)
-        if (view(root, sprites, menus.levelFile(), false, menus.options(), track, arenas, true,
+    std::filesystem::path settings;
+    Preferences prefs;
+    if (useMenu) {
+        std::unique_ptr<char, decltype(&SDL_free)> folder(SDL_GetPrefPath("Gogo", "LegoBlast"), SDL_free);
+        if (folder) {
+            settings = std::filesystem::path(reinterpret_cast<const char8_t*>(folder.get())) / "LegoBlast.Prefs";
+            prefs = readPreferences(settings);
+        }
+    }
+    if (track)
+        prefs.music = *track;
+    SoundOutput sound(std::filesystem::is_directory(audio) ? audio : LEGOBLAST_AUDIO_PATH,
+                      useMenu ? 9 : prefs.music, smoke);
+    sound.setVolumes(prefs.musicVolume, prefs.effectsVolume);
+    if (!useMenu) {
+        view(root, sprites, level, smoke, options, prefs, sound, arenas);
+        return 0;
+    }
+    Menus menus(sprites.parent_path(), arenas, prefs);
+    const ExtraScreens extra(sprites.parent_path(), prefs.gradient);
+    bool intro = true;
+    while (choose(menus, extra, sound, std::exchange(intro, false)) == MenuResult::Start)
+        if (view(root, sprites, menus.levelFile(), false, menus.options(), prefs, sound, arenas, true,
                  menus.sharedKeyboard()) == ViewResult::Closed)
             break;
+    if (!settings.empty()) {
+        menus.saveOptions(prefs);
+        try {
+            writePreferences(settings, prefs);
+        } catch (const std::exception& error) {
+            SDL_Log("LegoBlast preferences: %s", error.what());
+        }
+    }
     return 0;
 }
 }
@@ -528,7 +622,7 @@ int main(int argc, char* argv[]) {
         MatchOptions options;
         bool smoke = false;
         bool useMenu = argc == 1;
-        unsigned track = 1;
+        std::optional<unsigned> track;
         std::vector<std::string_view> paths;
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg = argv[i];

@@ -1,5 +1,6 @@
 #include "level.hpp"
 #include "sprite.hpp"
+#include "preferences.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -17,6 +18,9 @@ int main(int argc, char** argv) {
         check(argc == 2, "expected Amiga source path");
         const std::filesystem::path root = argv[1];
         const auto binary = root / "binary";
+        const auto prefs = readPreferences(root / "LegoBlast.Prefs");
+        check(prefs.match.arena == ArenaMode::Dynablaster && prefs.arena == 12 &&
+              prefs.controls == 4, "Amiga preferences menu offsets");
         const auto level = loadLevel(binary / "Lego_Level001.dat");
         check(level.warningTime == 1000 && level.totalTime == 15000 &&
               level.starts[0].x == 1 && level.starts[1].x == 17 &&

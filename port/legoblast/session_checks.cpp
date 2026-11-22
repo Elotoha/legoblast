@@ -267,6 +267,28 @@ void arenaShortcuts() {
     session.replayArena();
     check(session.arena().name == "first" && session.roundNumber() == 4, "replay changed arenas");
 }
+
+void microControls() {
+    auto level = fixture();
+    level.tiles.fill(1);
+    for (auto point : {Point{2,2}, Point{3,2}, Point{4,2}, Point{4,3}, Point{4,4}})
+        level.tiles[point.y * Width + point.x] = 0;
+    Session session(level, {.fiveWins = false});
+    Controls input{};
+    input[static_cast<std::size_t>(Control::Micro)].fire = true;
+    session.tick(input);
+    check(session.players()[0].control == static_cast<int>(Control::Micro),
+          "Micro did not join on Backspace");
+    const auto spawn = session.players()[0].center();
+    advance(session, 36);
+    check(session.players()[0].center().x > spawn.x &&
+          session.players()[0].center().y / TileSize == spawn.y / TileSize,
+          "Micro did not enter the only corridor");
+    for (int i = 0; i < 40 && session.players()[0].center().y / TileSize == spawn.y / TileSize; ++i)
+        session.tick({});
+    check(session.players()[0].center().y / TileSize > spawn.y / TileSize,
+          "Micro did not follow the bend");
+}
 }
 
 int main() {
@@ -278,6 +300,7 @@ int main() {
         contactAndBumpers();
         modes();
         arenaShortcuts();
+        microControls();
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

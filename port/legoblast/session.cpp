@@ -58,6 +58,7 @@ void Session::startRound(RandomState random, bool newRound) {
     nextClosing_ = closingDelay_ = resultDelay_ = appeared_ = 0;
     retrying_ = !newRound;
     arenasFinished_ = false;
+    reviewing_ = false;
     paused_ = alert_ = entriesClosed_ = false;
     phase_ = RoundPhase::AwaitingPlayers;
 }
@@ -80,6 +81,29 @@ void Session::togglePause() {
 
 bool Session::canChangeArena() const {
     return !paused_ && phase_ != RoundPhase::Podium && phase_ != RoundPhase::Statistics;
+}
+
+void Session::startPodium() {
+    phase_ = RoundPhase::Podium;
+    podiumTime_ = cameraTime_ = 0;
+    awaitingRelease_ = true;
+    sounds_.push_back({SoundCue::MatchVictory, 41, 3});
+    sounds_.push_back({SoundCue::Victory, 40});
+}
+
+bool Session::reviewPodium() {
+    if (paused_ || (phase_ != RoundPhase::Result && phase_ != RoundPhase::AwaitingPlayers) ||
+        std::ranges::none_of(players_.slots(), &Player::completedRounds))
+        return false;
+    reviewing_ = true;
+    startPodium();
+    return true;
+}
+
+void Session::skipPodium() {
+    phase_ = RoundPhase::Statistics;
+    podiumTime_ = std::max(podiumTime_, 100u);
+    awaitingRelease_ = true;
 }
 
 void Session::replayArena() {
@@ -152,8 +176,12 @@ void Session::tick(const Controls& input) {
             phase_ = RoundPhase::Statistics;
             awaitingRelease_ = true;
         } else if (!awaitingRelease_ && hasFire(input)) {
-            if (phase_ == RoundPhase::Statistics)
-                resetMatch();
+            if (phase_ == RoundPhase::Statistics) {
+                if (reviewing_)
+                    startRound(bombs_.randomState());
+                else
+                    resetMatch();
+            }
             else if (!cameraTime_ && podiumTime_ >= PodiumFadeIn) {
                 cameraTime_ = podiumTime_;
                 sounds_.push_back({SoundCue::Camera, 42});
@@ -171,11 +199,7 @@ void Session::tick(const Controls& input) {
             } else if (arenasFinished_) {
                 resetMatch();
             } else {
-                phase_ = RoundPhase::Podium;
-                podiumTime_ = cameraTime_ = 0;
-                awaitingRelease_ = true;
-                sounds_.push_back({SoundCue::MatchVictory, 41, 3});
-                sounds_.push_back({SoundCue::Victory, 40});
+                startPodium();
             }
         }
         return;

@@ -26,19 +26,28 @@ def export_samples(source, destination):
             output.writeframes(struct.pack(f"<{len(signed)}h", *(sample * 256 for sample in signed)))
 
 
-def export_music(source, destination):
+def render_music(module, destination, channel_options):
     with tempfile.TemporaryDirectory() as scratch:
         wav = Path(scratch) / "music.wav"
-        for module in sorted((source / "mods").glob("Mod_*.P6")):
-            # LaunchZik plays three voices in-game and reserves channel 3 for effects.
-            args = ["xmp", "--norc", "--nocmd", "-q", "-e", "protracker", "-A",
-                    "-p", "100", "-P", "100", "-f", "48000", "-b", "16"]
-            if "Game" in module.stem:
-                args += ["-M", "4"]
-            subprocess.run(args + ["-o", str(wav), str(module)], check=True)
-            subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", str(wav),
-                            "-c:a", "flac", str(destination / f"{module.stem}.flac")], check=True)
-            wav.unlink()
+        args = ["xmp", "--norc", "--nocmd", "-q", "-e", "protracker", "-A",
+                "-p", "100", "-P", "100", "-f", "48000", "-b", "16"]
+        subprocess.run(args + channel_options + ["-o", str(wav), str(module)], check=True)
+        subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", str(wav),
+                        "-c:a", "flac", str(destination)], check=True)
+
+
+def export_menu_voices(source, destination):
+    module = source / "mods" / "Mod_Menu.P6"
+    for voice in range(1, 5):
+        render_music(module, destination / f"Mod_Menu_Voice{voice}.flac", ["-S", str(voice)])
+
+
+def export_music(source, destination):
+    for module in sorted((source / "mods").glob("Mod_*.P6")):
+        # LaunchZik plays three voices in-game and reserves channel 3 for effects.
+        channels = ["-M", "4"] if "Game" in module.stem else []
+        render_music(module, destination / f"{module.stem}.flac", channels)
+    export_menu_voices(source, destination)
 
 
 def main():

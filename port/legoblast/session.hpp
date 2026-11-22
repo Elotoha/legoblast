@@ -3,6 +3,8 @@
 #include "bombs.hpp"
 #include "players.hpp"
 
+#include <algorithm>
+
 namespace legoblast {
 enum class RoundPhase { AwaitingPlayers, Running, Draining, Result, MatchComplete, Podium, Statistics };
 enum class ArenaMode { Fixed, Sequential, Random, Dynablaster };
@@ -27,6 +29,8 @@ public:
     void previousArena();
     void nextArena();
     void replayArena();
+    bool reviewPodium();
+    void skipPodium();
 
     const auto& players() const { return players_.slots(); }
     const auto& bumpers() const { return players_.bumpers(); }
@@ -40,6 +44,8 @@ public:
     unsigned elapsed() const { return timing_.autoCounter; }
     unsigned roundNumber() const { return roundNumber_; }
     unsigned podiumTime() const { return podiumTime_; }
+    unsigned podiumGrey() const { return cameraTime_ ? std::min(100u, podiumTime_ - cameraTime_) : 0; }
+    bool reviewing() const { return reviewing_; }
     bool paused() const { return paused_; }
     bool alert() const { return alert_; }
     bool isTeamMatch() const { return options_.teams; }
@@ -60,6 +66,7 @@ private:
     void advanceArena();
     void drawRandomArena(RandomState& random);
     bool canChangeArena() const;
+    void startPodium();
     void closeEntries();
     static std::vector<Point> fillOrder(const Level& level);
 
@@ -80,7 +87,7 @@ private:
     unsigned closingDelay_{}, warning_{}, remaining_{}, resultDelay_{}, appeared_{}, roundNumber_{};
     unsigned winnerAnimation_{}, drawAnimation_{};
     unsigned podiumTime_{}, cameraTime_{};
-    bool awaitingRelease_{};
+    bool awaitingRelease_{}, reviewing_{};
     bool paused_{}, alert_{}, entriesClosed_{}, retrying_{};
     bool arenasFinished_{};
     RoundPhase phase_{RoundPhase::AwaitingPlayers};

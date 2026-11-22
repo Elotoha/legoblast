@@ -25,6 +25,7 @@ jobs:
             /port/src/audio*.hpp
             /port/src/assets.hpp
             /amiga/release_aminet/LegoBlast.lha
+            /amiga/src/LegoBlast.Prefs
             /amiga/src/LEGO_WORLDS/*.col
             /amiga/src/binary/Lego_Level*.dat
             /amiga/src/binary/Lego_Flam_*.Dat
@@ -61,6 +62,7 @@ jobs:
           Copy-Item build/amiga-release/binary/LEGO_SPRITES.DAT package/data/binary/
           Copy-Item build/amiga-release/binary/barreJ*.raw, build/amiga-release/binary/bigbloc.dat, build/amiga-release/binary/timer1.dat, build/amiga-release/binary/Jauge.Dat, build/amiga-release/binary/JaugeTeams.Dat, build/amiga-release/binary/bois.raw package/data/binary/
           Copy-Item build/amiga-release/binary/PODIUM.RAW, build/amiga-release/binary/Podium.col, build/amiga-release/binary/lego_feelings.dat package/data/binary/
+          Copy-Item build/amiga-release/binary/proxima.crp, build/amiga-release/binary/Proxima.col, build/amiga-release/binary/MENU_CREDITS.RAW, build/amiga-release/binary/MENU_Credits.col, build/amiga-release/binary/MENU_Bonus2.raw, build/amiga-release/binary/MENU_Bonus.col, build/amiga-release/binary/statsblocs.dat package/data/binary/
           Copy-Item build/amiga-release/binary/MENUA.raw, build/amiga-release/binary/MENUA.col, build/amiga-release/binary/MENUB.raw, build/amiga-release/binary/MENUB.col, build/amiga-release/binary/mainmenubox.dat, build/amiga-release/binary/tinytxt8.font, build/amiga-release/binary/aachen13.font package/data/binary/
           Copy-Item port/legoblast/audio package/data/audio -Recurse
       - name: Vérifier le lancement de l’exécutable emballé

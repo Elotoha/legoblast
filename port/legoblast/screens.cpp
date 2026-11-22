@@ -36,55 +36,129 @@ std::string timeLabel(unsigned ticks) {
     return std::to_string(seconds / 60) + ":" +
         std::to_string(100 + seconds % 60).substr(1);
 }
+
+// decrunch.i: each unary code selects a run of zeroes or ones in BitList.
+Bytes unpackProxima(const Bytes& packed, std::size_t size) {
+    constexpr std::array lengths{1, 3, 1, 5, 2, 32, 256, 256, 4096, 4096};
+    constexpr std::array ones{false, true, true, true, true, false, true, false, true, false};
+    Bytes result(size);
+    std::size_t destination = 0, code = 0;
+    for (const auto byte : packed)
+        for (unsigned mask = 128; mask; mask >>= 1) {
+            if (destination == size * 8)
+                return result;
+            if (byte & mask) {
+                ++code;
+                continue;
+            }
+            if (code >= lengths.size())
+                throw std::runtime_error("invalid Proxima run");
+            const auto count = std::min<std::size_t>(lengths[code], size * 8 - destination);
+            if (ones[code])
+                for (std::size_t i = 0; i < count; ++i) {
+                    const auto pixel = destination + i;
+                    result[pixel / 8] |= 128 >> (pixel % 8);
+                }
+            destination += count;
+            code = 0;
+        }
+    if (destination != size * 8)
+        throw std::runtime_error("truncated Proxima screen");
+    return result;
+}
 }
 
-ScreenArt::ScreenArt(const std::filesystem::path& image, const std::filesystem::path& palette)
-    : indices_(Width * Height), palette_(readBytes(palette)) {
-    const auto raw = readBytes(image);
-    constexpr int planes = 7, planeSize = Width * Height / 8;
-    if (raw.size() != planes * planeSize || palette_.size() != 128 * 4)
+ScreenArt::ScreenArt(const std::filesystem::path& image, const std::filesystem::path& palette,
+                     int width, int height, bool compressed)
+    : indices_(width * height), palette_(readBytes(palette)) {
+    const int planes = compressed ? 8 : 7;
+    const int planeSize = width * height / 8;
+    auto raw = readBytes(image);
+    if (compressed)
+        raw = unpackProxima(raw, planes * planeSize);
+    if (raw.size() != static_cast<std::size_t>(planes * planeSize) ||
+        palette_.size() != static_cast<std::size_t>((1u << planes) * 4))
         throw std::runtime_error("invalid planar screen or palette");
     for (std::size_t pixel = 0; pixel < indices_.size(); ++pixel)
         for (int plane = 0; plane < planes; ++plane)
             indices_[pixel] |= ((raw[plane * planeSize + pixel / 8] >> (7 - pixel % 8)) & 1) << plane;
 }
 
-Bytes ScreenArt::rgb(const Bytes& image, unsigned brightness, bool grey, unsigned cycle) const {
+Bytes ScreenArt::rgb(std::span<const std::uint8_t> image, unsigned brightness, unsigned grey,
+                     unsigned cycle, unsigned white) const {
     Bytes rgb(image.size() * 3);
     for (std::size_t pixel = 0; pixel < image.size(); ++pixel) {
         auto index = static_cast<unsigned>(image[pixel]);
         if (index >= 96 && index < 112)
             index = 96 + (index - 96 + cycle) % 16;
         const auto* color = palette_.data() + index * 4 + 1;
-        const unsigned average = (color[0] * 3 + color[1] * 6 + color[2]) / 10;
-        for (std::size_t channel = 0; channel < 3; ++channel)
-            rgb[pixel * 3 + channel] = (grey ? average : color[channel]) * brightness / 100;
+        const unsigned average = (color[0] + color[1] + color[2]) / 3;
+        const auto fade = index < 96 ? grey : 0;
+        for (std::size_t channel = 0; channel < 3; ++channel) {
+            const auto shade = (average * fade + color[channel] * (100 - fade)) / 100;
+            rgb[pixel * 3 + channel] = (shade * brightness * (100 - white) / 100 + 255 * white) / 100;
+        }
     }
     return rgb;
 }
 
-void ScreenArt::applyMenuGradient() {
-    // MakeDegrad advances the shipped preference from gradient 2 to 3.
-    constexpr std::array start{0, 25, 56}, end{79, 105, 134};
+void ScreenArt::applyMenuGradient(unsigned variant) {
+    constexpr std::array<std::array<int, 6>, 6> gradients{{
+        {21,0,99,62,0,255}, {49,0,29,255,0,43}, {52,13,76,133,93,156},
+        {0,25,56,79,105,134}, {0,46,0,0,137,0}, {84,0,59,171,5,209},
+    }};
+    const auto& values = gradients.at(variant);
     for (unsigned channel = 0; channel < 3; ++channel) {
-        palette_[1 + channel] = start[channel];
-        const auto advance = (end[channel] - start[channel]) * 65536 / 31;
+        const auto start = values[channel];
+        palette_[1 + channel] = start;
+        const auto advance = (values[channel + 3] - start) * 65536 / 31;
         for (int i = 0; i < 32; ++i)
-            palette_[(32 + i) * 4 + 1 + channel] = start[channel] + advance * i / 65536;
+            palette_[(32 + i) * 4 + 1 + channel] = start + (advance * i >> 16);
     }
+}
+
+ExtraScreens::ExtraScreens(const std::filesystem::path& binary, unsigned gradient)
+    : intro_(binary / "proxima.crp", binary / "Proxima.col", 640, ScreenArt::Height, true),
+      credits_(binary / "MENU_CREDITS.RAW", binary / "MENU_Credits.col"),
+      bonuses_(binary / "MENU_Bonus2.raw", binary / "MENU_Bonus.col", ScreenArt::Width, 377) {
+    credits_.applyMenuGradient(gradient);
+    bonuses_.applyMenuGradient(gradient);
+}
+
+Bytes ExtraScreens::intro(unsigned tick) const {
+    return intro_.rgb(intro_.indices(), std::min(tick, 250u) * 100 / 250, 0, 0,
+                      tick > 250 ? std::min(tick - 250, 40u) * 100 / 40 : 0);
+}
+
+Bytes ExtraScreens::slideshow(unsigned page, unsigned tick) const {
+    const auto brightness = std::min(tick * 2, 100u);
+    if (page == 1)
+        return credits_.rgb(credits_.indices(), brightness);
+    const auto scroll = tick % 634;
+    constexpr int bottom = 377 - ScreenArt::Height;
+    int row = bottom;
+    if (scroll >= 50 && scroll < 292)
+        row = bottom - (scroll - 50) / 2;
+    else if (scroll >= 292)
+        row = scroll < 392 ? 0 : (scroll - 392) / 2;
+    const auto frame = std::span(bonuses_.indices()).subspan(row * ScreenArt::Width,
+                                                            ScreenArt::Width * ScreenArt::Height);
+    return bonuses_.rgb(frame, brightness);
 }
 
 PodiumArt::PodiumArt(const std::filesystem::path& binary)
     : backdrop_(binary / "PODIUM.RAW", binary / "Podium.col"),
-      feelings_(readBytes(binary / "lego_feelings.dat")) {
-    if (feelings_.size() != 24 * 160 * 8)
+      feelings_(readBytes(binary / "lego_feelings.dat")),
+      heads_(readBytes(binary / "statsblocs.dat")),
+      textFont_(readBytes(binary / "tinytxt8.font")) {
+    if (feelings_.size() != 24 * 160 * 8 || heads_.size() != 3 * 122 * 8)
         throw std::runtime_error("invalid Lego_Feelings bank");
 }
 
 std::vector<unsigned> PodiumArt::ranking(const Session& session) const {
     std::vector<unsigned> players;
     for (unsigned i = 0; i < PlayerCount; ++i)
-        if (session.players()[i].roundsPlayed)
+        if (session.players()[i].completedRounds)
             players.push_back(i);
     if (session.isTeamMatch()) {
         std::stable_sort(players.begin(), players.end(), [](unsigned a, unsigned b) {
@@ -93,7 +167,7 @@ std::vector<unsigned> PodiumArt::ranking(const Session& session) const {
     } else {
         const auto statistics = [&](unsigned i) {
             const auto& player = session.players()[i];
-            return std::tuple(session.score()[i], player.roundsPlayed, player.bombsPlanted, player.bonusesTaken);
+            return std::tuple(player.victories, player.completedRounds, player.bombsPlanted, player.bonusesTaken);
         };
         std::stable_sort(players.begin(), players.end(), [&](unsigned a, unsigned b) {
             return statistics(a) > statistics(b);
@@ -151,7 +225,81 @@ Bytes PodiumArt::render(const Session& session) const {
         for (int j = 0; j < count; ++j)
             drawPlayer(image, left[i] + gap + j * (19 + gap), top[i], animation[i], frame, groups[i][j]);
     }
-    return backdrop_.rgb(image, std::min(session.podiumTime(), 100u), grey);
+    if (grey)
+        drawStatistics(image, session);
+    return backdrop_.rgb(image, std::min(session.podiumTime(), 100u), grey ? 100 : session.podiumGrey());
+}
+
+void PodiumArt::drawStatistics(Bytes& image, const Session& session) const {
+    const auto rectangle = [&](int x, int y, int width, int height, unsigned color) {
+        for (int row = y; row < y + height; ++row)
+            std::fill_n(image.begin() + row * ScreenArt::Width + x, width, color);
+    };
+    for (int offset : {0, 250}) {
+        rectangle(0, offset, 320, 6, 103);
+        rectangle(offset ? 314 : 0, 0, 6, 256, 103);
+    }
+    const auto text = [&](int x, int y, std::string_view value) {
+        printBitmap(image, ScreenArt::Width, textFont_, x + 1, y + 2, value, 102);
+        printBitmap(image, ScreenArt::Width, textFont_, x, y + 1, value, 103);
+    };
+    constexpr std::array columns{52, 86, 153, 196, 248};
+    constexpr std::array headings{"WINS", "GAMES", "DEADS", "BOMBS", "BONUS"};
+    for (std::size_t i = 0; i < columns.size(); ++i)
+        text(columns[i], 104, headings[i]);
+
+    unsigned games = 1, bombs = 1, bonuses = 1;
+    for (const auto& player : session.players()) {
+        games = std::max(games, player.completedRounds);
+        bombs = std::max(bombs, player.bombsPlanted);
+        bonuses = std::max(bonuses, player.bonusesTaken);
+    }
+    int y = 117;
+    for (auto slot : ranking(session)) {
+        const auto& player = session.players()[slot];
+        for (int dy = 0; dy < 15; ++dy)
+            for (int x = 0; x < 24; ++x) {
+                const auto byte = 3 * (slot * 16 + dy) + x / 8;
+                const auto bit = 128 >> (x % 8);
+                if (!(heads_[byte] & bit))
+                    continue;
+                unsigned color = 0;
+                for (unsigned plane = 0; plane < 7; ++plane)
+                    if (heads_[(plane + 1) * 3 * 122 + byte] & bit)
+                        color |= 1 << plane;
+                image[(y - 2 + dy) * ScreenArt::Width + 32 + x] = static_cast<std::uint8_t>(color);
+            }
+        const int played = 60 * player.completedRounds / games;
+        const int wins = 60 * player.victories / games;
+        const int losses = 60 * player.deaths / games;
+        rectangle(88, y + 1, played + 1, 9, 102);
+        rectangle(87, y, played + 1, 9, 98);
+        if (losses) {
+            rectangle(87 + played - losses, y, losses + 1, 9, 99);
+            rectangle(87 + played - losses, y, 1, 9, 100);
+            rectangle(87 + played, y, 1, 9, 100);
+        }
+        if (wins) {
+            rectangle(87, y, wins + 1, 9, 110);
+            rectangle(87, y, 1, 9, 108);
+            rectangle(87 + wins, y, 1, 9, 108);
+        }
+        text(56, y, std::to_string(player.victories));
+        text(89, y, std::to_string(player.completedRounds));
+        text(159, y, std::to_string(player.deaths));
+        for (const auto& [x, value, maximum] : {std::tuple{191, player.bombsPlanted, bombs},
+                                               std::tuple{243, player.bonusesTaken, bonuses}}) {
+            rectangle(x + 1, y + 1, 46, 9, 102);
+            rectangle(x, y, 46, 9, 101);
+            if (value) {
+                const int width = 45 * value / maximum;
+                rectangle(x, y, width + 1, 9, 99);
+                rectangle(x + width, y, 1, 9, 100);
+                text(x + 2, y, std::to_string(value));
+            }
+        }
+        y += 16;
+    }
 }
 
 ReadyPanel::ReadyPanel(const std::filesystem::path& binary)
@@ -217,13 +365,28 @@ std::vector<ArenaEntry> loadArenaList(const std::filesystem::path& binary) {
     return arenas;
 }
 
-Menus::Menus(const std::filesystem::path& binary, std::vector<ArenaEntry>& arenas)
+Menus::Menus(const std::filesystem::path& binary, std::vector<ArenaEntry>& arenas, const Preferences& prefs)
     : main_(binary / "MENUA.raw", binary / "MENUA.col"), optionsArt_(binary / "MENUB.raw", binary / "MENUB.col"),
-      boxes_(readBytes(binary / "mainmenubox.dat")), font_(readBytes(binary / "tinytxt8.font")), arenas_(arenas) {
+      boxes_(readBytes(binary / "mainmenubox.dat")), font_(readBytes(binary / "tinytxt8.font")), arenas_(arenas),
+      options_(prefs.match), control_(prefs.controls), definition_(prefs.definition) {
     if (arenas_.empty())
         throw std::runtime_error("no arenas available");
-    main_.applyMenuGradient();
-    optionsArt_.applyMenuGradient();
+    main_.applyMenuGradient(prefs.gradient);
+    optionsArt_.applyMenuGradient(prefs.gradient);
+    for (std::size_t i = 0; i < arenas_.size(); ++i) {
+        if (arenas_[i].number == prefs.arena)
+            arena_ = i;
+        arenas_[i].enabled = !prefs.disabled.at(preferenceArenaSlot(arenas_[i].number));
+    }
+}
+
+void Menus::saveOptions(Preferences& prefs) const {
+    prefs.match = options_;
+    prefs.arena = arenas_[arena_].number;
+    prefs.controls = control_;
+    prefs.definition = definition_;
+    for (const auto& entry : arenas_)
+        prefs.disabled.at(preferenceArenaSlot(entry.number)) = !entry.enabled;
 }
 
 MenuResult Menus::handle(MenuInput input) {

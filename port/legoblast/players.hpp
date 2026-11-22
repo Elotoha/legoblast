@@ -1,6 +1,7 @@
 #pragma once
 
 #include "level.hpp"
+#include "micro.hpp"
 #include "sound_cues.hpp"
 
 #include <array>
@@ -45,7 +46,7 @@ struct Player {
     int recentCell{}, earlierCell{};
     int bumperCell{};
     int roundsPlayed{};
-    unsigned bombsPlanted{}, bonusesTaken{};
+    unsigned completedRounds{}, deaths{}, victories{}, bombsPlanted{}, bonusesTaken{};
     int control{-1};
     Activation activation{Activation::Hidden};
     bool forceCenter{true}, autoFire{}, previousFire{}, fire{}, canPush{}, push{}, canBeBumped{};
@@ -89,6 +90,7 @@ private:
     void show(Player& player, PlayerTick& timing);
     void applyBonus(Player& player, unsigned number, PlayerTick& timing, BombField& bombs, PlayerMap& map);
     std::array<Player, PlayerCount> players_{};
+    Micro micro_;
     std::vector<Bumper> bumpers_;
     std::array<bool, static_cast<std::size_t>(Control::Count)> locked_{};
     bool someoneAppeared_{};
