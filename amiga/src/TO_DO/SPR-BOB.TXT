@@ -1,0 +1,153 @@
+
+TODO:
+
+- Pousser les bombes gelees par le timer.
+- generateur de degrades pour menus.
+- Menu 2: Si on va vers le bas et que l'on est dans un "groupe" en bas, on arrive sur "OK"
+- Tapis roulant
+- Tapis explosant
+- Rnd level dyna à changer: + de bb, de fl., plus de murs destructibles.
+- Differents types de fermeture: editeur de fermetures en amos.
+- enchainement des ecrans a revoir.
+	- swap intro -> menu: manque fading blanc -> couleurs menu
+	- swap menu 1 -> menu 2 : Le menu 2 arrive du dessous, en poussant doucement
+	- swap menu 2 -> menu 1 : Le menu 1 tombe du dessus, avec rebonds etc...
+	- swap menu 1 -> jeu: chargement, donc rien a prt 
+	- swap jeu -> podium :
+		1/ la barre des joueurs gicle vers le bas (+son OU musique avec son)
+		2/ le jeu gicle vers le haut (idem)
+		3/ le podium ARRIVE par un cote.
+	- changement de level: pour passer du level N au level N+1 :
+	(Ou alors pareil mais de haut en bas, surement plus facile.)
+		- L'ecran de jeu actuel part a gauche a vitesse constante.
+		En meme temps on calcule le nouveau level.
+		- On change la palette.
+		- On copie l'ecran de travail (planar+7*sizeplan) sur (planar)
+		- Le nouvel ecran arrive de la droite.
+	Il faut que la vitesse de depart et d'arrivee des levels se fasse
+	rapidemment, de sorte qu'un ordinateur rapide ne perde pas de temps.
+	Exemple: Vitesse de disparition: 16 pix/sec = 20 Vbl		
+		 A la fin de la construction du level, on lance la nouvelle mission.
+	TEMPS TOTAL MINI: 40 Vbl sauf si arrive a 32 pix/sec: TOTAL=30 Vbl
+	REMARQUE: La barre des joueurs ne bouge pas de place.
+		Elle est simplement regenerée en meme temps que les mouvements		
+		de level se font: automatique dans InitLevel a la fin de construction
+		du level.
+	ENVISAGER de lancer l'apparition du level d'apres avant la fin de
+	construction du level: si le level est visible, on peut lancer l'operation,
+	et on gagne du temps.
+
+*********
+
+
+Pour gerer les bobs dans legoblast.
+
+But: remplacer tous les sprites par des bobs.
+
+Avantages:
+		- Simplicite relative une fois mis en place.
+		- Sprites utilisables pour autre chose (trouver quoi, je n'aime pas
+		laisser des ressources dormir dans un coin de l'amiga...)
+		- Liberte de palette totale
+		- Pas de changement en cours de jeu:
+			- palette
+			- routines de gestion
+		- Nombre de bobs "illimité" :
+			- 8 joueurs facile a mettre en place,
+			- Rajout possible de bidules (monstres divers)....
+			(- possibilite de faire bouger bombe au pixel pres.
+			  (Une bombe de temps en temps, comme par ex. la "main"))
+			(- possibilite "don't move", "hurry up!")
+		- Taille des mecs non limitée: Anims entieres EN THEORIE
+		Parce que si je veux optimizer un minimum les routines de copie
+		des mecs il faut limiter a 16 pixels de large.
+		De plus, le fait de passer en 32 pixels de large ferait doubler
+		la taille du fichier mecs: 2*258 Ko = un peu trop
+		- bobs en fast. Memoire chip liberee.
+		- possibilite de faire des trucs "fun": un oiseau arrive en volant
+		et largue une bombe qu'il avait dans ses pattes.
+		
+Inconvenients:	
+		- SI LE JEU RAME, LES MECS RAMERONT AUSSI
+		- 2 Vbl au lieu d'une ; Mouvements mecs, mouvements flammes.
+		- ADAPTATION dans la routine Vbl pour routine bobs
+		- ADAPTATION dans sprites2.i tres nombreuses
+		- installation obligatoire nouvelle routine collision
+		- Double buffer sans swap: copie...
+		- Temps de copie des mecs bcp plus long (Hard Sprites=0)
+		- taille du fichier plus grande: pour 199 sprites, 
+		au lieu de 135 Ko :
+			BOBS		
+			Taille normale pour les memes besoins:
+			4 j*6 p*2 l*18 h*199 v= 171936 Ko
+			Mais si on fait ca c'est justement pour pouvoir 
+			jouer a 6 joueurs :
+			171000*1.5= 258 Ko octets
+		
+		- impossibilite de mettre une resolution differente. 
+		(mais c vrai que je ne m'en sers pas).
+
+
+
+
+DEROULEMENT DES OPERATIONS:
+---------------------------
+
+La gestion totale pour l'instant est totalement multitache: aucune synchro
+sur la VBL.
+
+Ce qui veut dire que le mec pourrait etre copie n'importe quand, en meme tps
+par exemple qu'une bombe.
+
+DONC il faut passer la routine des joueurs dans le module de GESTION global.
+
+- Gestion de tout: bombes, flammes, etc...
+- Affichage des bobs avec sauvegarde du fond.
+- Copie sur ecran visible de la totalite.
+- Effacement des bobs: restauration du fond.
+
+
+
+REFLEXION SUR L'ECRAN DE CHARGEMENT:
+------------------------------------
+
+Il s'agit d'un ecran qui n'est qu'une facade sur le Workbench qui est multitache
+pendant cette opération.
+
+Il faudrait faire soft: "LOADING"
+Le top serait d'avoir une animation a la Vbl. Mais quoi ?
+
+Pour les fichiers en cours de chargement:
+
+La fenetre des erreurs et le nombre de fichiers charges sont mis à 0 lorsque l'on
+fait un nouveau TEMP_RESTORE_SYSTEM qui est effectivement executé (nouveau chargement).
+
+
+MEMORY (MISE A JOUR EN TEMPS REEL COMME LES AUTRES WINDOWS)
+------
+	USED	   FREE
+CHIP	491 Ko	  309 Ko	CHIP	827 Ko		309 Ko
+FAST	336 Ko	11866 Ko
+
+Pour la taille "USED", il suffit de définir une variable de compilation par section,
+et de prevoir 2 variables pour les LOAD.
+
+
+LOAD STATS
+----------
+SUCCESS: 10
+ERRORS:   3	
+
+
+ERRORS
+------
+LegoBlast.prefs ... File not found
+Samples.Def ... File not found
+Modules/Mod_Game4.P6 ... Out Of Memory
+
+Si erreur, laisser affiché jusqu'à un click
+
+
+
+
+

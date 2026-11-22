@@ -1,0 +1,16 @@
+
+ Code     | GOGO
+ Gfx      | COBALT 
+          | BLACK ANGEL
+ Sfx      | POWERB   
+ A.I.Code | DJTHUNDER
+
+This game was written 100% ASM. 
+Started about mi november 1996. Developpment time of 5 months.
+Utilities used : Devpac, DPaint, Amos, OctaMed.
+And... GfxMaster, ProTracker, P6Conv, DOpus, NoiseConverter.
+
+We made this game for your (and our !) pleasure. So enjoy it !
+
+We're continuing this game... don't worry about that ! See u in next Version.
+

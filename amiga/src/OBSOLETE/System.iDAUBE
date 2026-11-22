@@ -1,0 +1,58 @@
+
+TEMP_RESTORE_SYSTEM
+	Tst.l	SYSTEM_RESIDENT
+	Bne	.MultiOk
+	Move.w	#0,ExeGENERALVbl
+	Movem.l	D0-D7/A0-A6,-(A7)
+	Moveq	#8,D0
+	Bsr	PaletteBackup
+	*Moveq	#8,D0
+	*Bsr	PaletteInit
+	*CloseScreenHard
+	Jsr	RestoreSystem2	Sans le View() !
+	*Move.w	#$0100,DMACon	Plus de screen $100,copper $080
+	*Bsr	SetVierge	
+	Jsr	SetSimple
+	* ESSAI: je laisse la copperliste
+	*Move.w	#$8180,DMACon	Plus de screen $100,copper $080
+	VblWait	#250
+	VblWait	#30
+	Move.w	#0,$dff180
+	*WaitHard	#1
+	Move.l	#-1,SYSTEM_RESIDENT
+	Movem.l	(A7)+,D0-D7/A0-A6
+.MultiOk	RTS
+
+TEMP_TAKE_SYSTEM
+	Tst.l	DO_NOT_RETAKE_SYSTEM
+	Bne	.LegoOk
+	Tst.l	SYSTEM_RESIDENT	On ne restaure que si sys coupé
+	Beq.s	.LegoOk
+	Movem.l	D0-D7/A0-A6,-(A7)
+	*Moveq	#8,D0
+	*Bsr	PaletteInit
+	WaitHard	#10
+	Clr.l	SYSTEM_RESIDENT
+	Bsr	BIGTAKESYSTEM
+	Moveq	#8,D0
+	Bsr	PaletteRestore
+	*Move.w	#$8180,DMACon
+	Move.w	#-1,ExeGENERALVbl
+	Movem.l	(A7)+,D0-D7/A0-A6
+.LegoOk	RTS
+
+
+BIGTAKESYSTEM
+	Jsr	TakeSystem2		COUPE TOUT !
+*	Bsr	SetCopList
+	Jsr	Set1
+	Move.l	CopList1,Cop1Lch
+	VblWait	#10
+	Clr.w	CopJmp1
+	Move.w	#$8180,DMACon
+	*OpenScreenHard
+	Jsr	SetScreenRegisters
+	RTS
+
+
+

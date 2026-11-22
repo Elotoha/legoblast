@@ -1,0 +1,66 @@
+failat 200
+makedir ram:lego
+assign lg: ram:lego
+makedir lg:binary
+makedir lg:mods
+makedir lg:sons
+makedir lg:extras
+makedir lg:binary/extras
+
+;                   MAIN
+cd asm:lego/
+copy legoblast.prefs lg:
+copy legoblast lg:
+copy legoblast.info lg:
+copy lego17 lg:
+copy samples.def lg:
+copy legoblast.readme lg:
+copy lastnotes.readme lg:
+
+;                   BINARY
+cd binary
+copy Menu#?.raw lg:binary/
+copy podium#?.raw lg:binary/
+copy proxima.crp lg:binary/
+copy lego_sprites#?.dat lg:binary/
+; nouveaux fichiers
+copy lego_spritesindex#?.dat lg:binary/
+copy bigbloc.dat lg:binary/
+copy lego_blocs.dat lg:binary/
+copy lego_feelings.dat lg:binary/
+copy lego_flam_bib.dat lg:binary/
+copy lego_flam_manu.dat lg:binary/
+copy lego_flam_lazer.dat lg:binary/
+copy mainmenubox.dat lg:binary/
+copy tinytxt8.font lg:binary/
+copy aachen13.font lg:binary/
+copy mob.font lg:binary/
+copy barreJI4.raw lg:binary/
+copy barreJI6.raw lg:binary/
+copy barreJT4.raw lg:binary/
+copy barreJT6.raw lg:binary/
+copy bois.raw lg:binary/
+copy font1.quickfont lg:binary/
+copy lego_level???.dat lg:binary/
+copy timer1.dat lg:binary/
+copy Jauge.Dat lg:binary/
+Copy JaugeTeams.Dat lg:binary/
+copy statsblocs.dat lg:binary/
+copy #?.col lg:binary/
+
+;                   EXTRAS
+Copy /AMOS/LevelEditor.AMOS lg:extras/
+Copy extras/bobs_nus26.iff lg:binary/extras/
+
+;                   MODS
+cd /
+copy mods/#? lg:mods/
+
+;                   SONS
+copy sons/#? lg:sons/
+
+;                   ARCHIVAGE pour en faire une disquette
+cd lg:
+lha a -r ram:Lego.lha lg:
+
+

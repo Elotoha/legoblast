@@ -1,0 +1,64 @@
+
+- Mec meurt moins de 5 secondes: DON'T MOVE en surimpression (plan 7) et relancement
+du niveau. Droit à l'erreur DEUX FOIS max par level.
+- bombe nucleaire sans bombe: son de coup foireux (petard mouille)
+- chargement des sons: affichage "Loading samples..."
+Et pour chaque son chargé on peut jouer le son. Et afficher a l'ecran les erreurs...
+- Debugger transparent pour bonus
+- Poser bombes une par une
+- meilleur screensaver. (Save iff ?)
+
+
+******************************** POUR LA GESTION DES PALETTES REALTIME (ou presque)
+
+.Changement 4->8 : 
+	- Copie nouvelle barre des taches + gene 5 joueurs, Changement palette
+	- 
+
+
+.Changement 8->4 : 
+	- Bugs de duplication des perso (Idem anim fin)
+
+
+******************************** POUR LA GESTION DE FIN DE LEVEL
+
+
+Il faut temporiser: (pour une victoire seulement)
+ 1- Affichage bombe or + son
+ 2- anim mec victoire + son
+
+
+PARTIE A EXECUTER SEULEMENT EN MODE "5 WIN MATCH" :
+Si le resultat est egal a 5 on doit declencher la routine de podium:
+- comme normal, bombe+son, applaudissements 
+- wait 5 secondes ou click de joueur.
+- affichage ecran podium (copper+fading) (+ stats) dans la partie basse du podium.
+- wait 2 s ou esc
+- wait click ou 15 s ou esc.
+-> retour au menu
+
+PARTIE CONCERNANT SEULEMENT LE MODE "FREE PLAY" :
+On ne fait RIEN de special ! : bombe, applaudissements, puis click : level suivant:
+On affiche AU DEBUT DE CHAQUE LEVEL dans le CADRE TRANSPARENT JUSTE le Nombre de victoires.
+
+>>> ON POURRAIT meme, au moment ou l'on appuye sur "ESC" pour revenir au menu
+afficher a ce moment l'ecran de podium avec les stats appropriees :
+- wait 2 s ou esc
+- wait click ou 15 s ou esc.
+
+
+8 Games.
+
+games: 6 (4 win, 1 nul, 1 defeat)
+Bombs: 422 droped                               (agressive guy)
+Bonus: 47 taken                                 (bonus catcher)
+Distance: 7.24 km                               (The running man)
+Time: 14 minutes                                (Not bad)
+Joystick: 4532 moves (300 moves/mn)             (Excited man)
+
+
+
+
+
+
+

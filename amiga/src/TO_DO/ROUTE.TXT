@@ -1,0 +1,43 @@
+      8
+     738     
+    73248
+   7621249
+    A6259
+     A59
+      A   
+
+
+
+
+4 
+2 chacun = 8
+3 chacun = 12
+
+4,8,12,16
+1 2 3  4
+
+4*niveau=nb 
+
+4
+12
+24
+48
+
+
+donc nb cases total = 8*niveau+1
+
+niveau=3 -> nb=24+1=25
+
+25 cases à tester au maximum, cela suffit pour l'IA 
+de l'ordinateur
+et ce sera rapidemment fait normalement question temps
+machine... Il faut bien parce qu'avec des machines
+comme celle de guillaume...
+
+Et puis cette routine sera à la VBL, il faut donc qu'il
+reste un peu de temps machine pour les flammes et 
+les bombes !
+
+
+
+

@@ -1,0 +1,34 @@
+failat 50
+makedir ram:lego
+assign lego: ram:lego
+cd lego:
+makedir amos
+makedir binary
+makedir dos
+makedir exec
+makedir graphics
+makedir misc
+makedir mods
+makedir player
+makedir sons 
+makedir lego_worlds
+cd asm:lego
+copy #? lego:
+;delete lego:lego11
+;delete lego:lego12
+;delete lego:lego13
+;delete lego:lego14
+;delete lego:lego15
+copy amos/#?.amos lego:amos/
+copy binary/#? lego:binary/
+copy dos/#? lego:dos/
+copy exec/#? lego:exec/
+copy graphics/#? lego:graphics/
+copy misc/#? lego:misc/
+copy mods/#? lego:mods/
+copy all player/#? lego:player/
+copy sons/#? lego:sons/
+copy lego_worlds/#?.col lego:lego_worlds/
+cd lego:/
+lha a -r -R ram:work/LEGO.lha Lego
+

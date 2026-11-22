@@ -1,0 +1,235 @@
+
+*************** IDEES pour faire des BOBS dans LEGOBLAST
+
+
+Les bobs demandent:
+- Restauration de l'ancien font AVEC ou SANS masque
+- Sauvegarde du font pour le nouveau bob
+- Copie du nouveau bob avec masque
+
+Hypothese:
+
+Je fais ces traitements en meme temps que la gestion des joueurs 
+dans l'interruption VBL.
+
+- Restauration de l'ancien font intelligent (c cette routine qui assure la coherence de l'algo)
+- Sauvegarde du font pour le nouveau bob (MemFont)
+- Copie du nouveau bob avec masque
+- Sauvegarde du bob + le font
+
+
+
+Idees:
+- Monstre qui fait exploser les bombes des qu'il les touche
+  Meurt avec la bombe
+- Monstre qui prend les bonus
+- Monstre qui donne de mauvaises maladies
+
+
+Si les monstres font 16 pixels de large, au max on est sur 3 mini cases:
+
+ 0000 11111111 0000
+
+
+Bon, question a cent balles:
+Comment modifier la memoire du bob sans modifier les routines de copie
+de blocs (faut pas non plus trop abuser sur le temps machine, on est
+pas sur pc, on optimise quand meme un minimum!... ;-) )
+
+Solution I: Comparer le font sauvé, l'image du bob avec ce qui actuellement
+sur l'écran.
+
+Cela permettrait surement de ne pas restaurer les pixels qui ont
+ete modifies durant la VBL
+
+En fait le plus facile serait de recuperer apres impression du bob sur
+l'ecran l'image du font avec le bob. Comme ca avec un ou exclusif je sais
+ou il y a eu des modifications. Probleme: on est en multiplans, il faudrait
+donc refaire un masque realtime.
+
+Mise au propre, essai, simulation :
+
+1/ font sauve :    aijioog
+   image bob :       ghok
+2/ font+bob :      aighokg
+
+3/ modif :            hkot
+
+4/ Ecran+modif:    aighkot
+                     
+5/ Desire:           jhko   On ne restaure deja que les bits affectes
+                            par le bob.
+
+
+Masque bob  =      0011110
+Masque modif=      0001111
+
+Desire=font.not(masque bob)   font sauve.not(masque modif)
+
+
+DONC, on a memoire =    
+                   aijioog
+
+Bob =
+                     ghok
+
+Ecran =            
+                   aighkot
+
+
+
+On restaure les bits affectes par le bob et qui ne sont pas affectes par
+la modif
+
+Donc le font qui est conserve est celui du bob precedent et de la modif
+
+
+Mask Bob = Not(Mask Modif).Mask Bob = Not(0001111).0011110 = 0010000
+
+
+DONC je restaure les bits 0010000
+
+
+  * Seul interet: constituer le MASQUE de modif
+
+  * Pour simplifier de beaucoup la routine, au prix de 2 fois plus lent,
+  * je fais des Move.l en .W aligned, pour pouvoir couvrir un mot entier quelle
+  * que soit sa position en decalage de bits
+  * Je peux meme faire un Move.l en .B aligned, pour permettre des bobs
+  * de 24 pixels de large au lieu de 16. C pas plus lent...
+  * MAIS le Move.l non aligne sur un .L permet d'EVITER 2 MOVE.W alignes,
+  * donc je n'y perds pas en vitesse en definitive.
+
+ 
+***********************************************************
+
+
+*********************  Effacer un bob avec restauration intelligente
+*
+* A0: Adresse MemBob (Vars + MemPlanApresBob + MemPlanAvantBob)
+*
+*
+*  MemBob:  	Adresse bob sur l'écran plan 0 .L
+*		Hauteur en pixels .W
+*
+*
+*   D0-D1: Travail
+*   D6-D7: Masques
+*   D2: Boucle
+*   A0: ApresBob + AvantBob
+*   A2: Plan
+*   Reste: D3-D5/A1/A3-A6   reste 7 besoin: 5+2
+*   DONC mémoires de plan : D3-D5/A3-A5
+*   Et optimizations plan : A1/A6
+*
+*  Il faut stocker le MemPlanAvant et MemPlanApres alternativement à la suite:
+*     Pour x lignes :
+* 		Pour 1 ligne :
+*			6*MemPlanApres .L
+*			6*MemPlanAvant .L
+*
+*  Ce qui fait, pour un objet de 16 pixels de haut :
+*  16*((6+6)*4) = 192.L = 384.W = 768 octets pour la SAUVEGARDE du bob seulement !!! (contre 16*(6*2)=192 pour une case)
+*  Donc pendant le temps où l'on restaure un bob on peut restaurer 2 cases. (=2 bombes...)
+*
+BobClear
+	Move.l	(A0)+,A2	Adresse planar bob
+	Move.w	(A0)+,D2	Hauteur bob	... A0: MemPlanApres+AvantBob
+	
+	Move.l	#SizePlan*2,D0
+	Movea.l	A2,A1		Plan2
+	Adda.l	D0,A1
+	Movea.l	A1,A6		Plan4
+	Adda.l	D0,A6
+.Loop        
+        Move.l  (A2),D3
+        Move.l  SizePlan(A2),D4
+        Move.l  (A1),D5
+        Move.l  SizePlan(A1),A3        
+        Move.l  (A6),A4        
+        Move.l  SizePlan(A6),A5        
+    
+        Move.l  D3,D6
+        Eor.l   (A0)+,D6
+        Move.l  D4,D7
+        Eor.l   (A0)+,D7
+        Or.l    D7,D6
+        Move.l  D5,D7
+        Eor.l   (A0)+,D7
+        Or.l    D7,D6
+        Move.l  A3,D7
+        Eor.l   (A0)+,D7
+        Or.l    D7,D6
+        Move.l  A4,D7
+        Eor.l   (A0)+,D7
+        Or.l    D7,D6
+        Move.l  A5,D7
+        Eor.l   (A0)+,D7
+        Or.l    D7,D6   D6: Masque de modif 000100
+	Move.l	D6,D7	D7: 000100
+        Not.l   D6      D6: 111011
+
+	***************************
+
+	Move.l	D3,D0		Plan actuel D3-D5/A3-A5
+	And.l	D6,D0		Masque de modif 111011 : On jette 1 bit du plan actuel
+	Move.l	(A0)+,D1	MemPlanAvantBob
+	And.l	D7,D1		Masque de modif 000100 : On garde 1 bit du font précédant le bob
+	Or.l	D0,D1		Composition
+	Move.l	D1,(A2)		Move
+
+	Move.l	D4,D0
+	And.l	D6,D0
+	Move.l	(A0)+,D1
+	And.l	D7,D1	
+	Or.l	D0,D1	
+	Move.l	D1,SizePlan(A2)
+
+	Move.l	D5,D0
+	And.l	D6,D0
+	Move.l	(A0)+,D1
+	And.l	D7,D1	
+	Or.l	D0,D1	
+	Move.l	D1,(A1)	
+
+	Move.l	A3,D0
+	And.l	D6,D0
+	Move.l	(A0)+,D1
+	And.l	D7,D1	
+	Or.l	D0,D1	
+	Move.l	D1,SizePlan(A1)
+
+	Move.l	A4,D0
+	And.l	D6,D0
+	Move.l	(A0)+,D1
+	And.l	D7,D1	
+	Or.l	D0,D1	
+	Move.l	D1,(A6)	
+
+	Move.l	A5,D0	
+	And.l	D6,D0	
+	Move.l	(A0)+,D1
+	And.l	D7,D1	
+	Or.l	D0,D1	
+	Move.l	D1,SizePlan(A6)	
+
+	Adda.w	#SizeLine,A2	Plans0-1
+	Adda.w	#SizeLine,A1	Plans2-3
+	Adda.w	#SizeLine,A6	Plans4-5
+
+	Dbf	D2,.Loop
+
+	***************************
+
+
+AVANTAGE: 
+- Double buffer independant.
+- "Like a Sprite" : N'altere pas le reste des graphiques de font
+- Possibilite en mode multi-bob d'effacer un bob n'importe quand
+  sans tenir compte de l'ordre de copie des bobs sur l'ecran
+
+INCONVENIENTS:
+- Relativement tres lent.
+- Bob limites a 24 pixels de largeur
+- Avec le code actuel limite a 6 plans. Besoin de 2+nbplans registres
+  de donnee pour la restauration

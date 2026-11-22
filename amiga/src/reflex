@@ -1,0 +1,131 @@
+
+
+Nouvelle base de réflexion:
+
+
+Est-il utile de prévoir loin dans les cases ou pas ?
+
+
+
+Nouvelle technique: 
+prendre des infos lors des routines de bombes.
+Dès qu'une bombe est sur le point d'exploser, elle prévient le micro.
+
+Il me faudrait en permanence le timer le plus petit qui menace une case.
+Est-ce suffisant par ligne et par colonne ?
+Ne pas prendre en compte dans les lignes sans débouché en Y, et dans les 
+colonnes sans débouché en X
+
+Oui, ça suffit pour tous les duels. A plusieurs joueurs des fois il aurait
+peur de façon bizarre mais c'est jouable.
+
+Une bombe posée dans une intersection menace la ligne ET la colonne,
+mais une bombe posée entre deux cases indestructibles ne menace QUE la
+ligne ou la colonne.
+
+FACILE !!!
+La routine des bombes est appelée de façon régulière, et la bombe ne peut
+pas changer d'état sans un appel à cette routine. Le plus simple est donc
+que la bombe teste elle même:
+
+Avant routine:
+Tempsmini(Colonnes) = 2 plombes
+Tempsmini(Lignes) = 2 plombes
+
+Si X = Colonne vide, (sinon micro aurait peur à travers indestructible):
+	Si TempsMini(Ligne)>Temps bombe alors TempsMini(Ligne)=Temps bombe
+FSi
+
+Idem en Y = Ligne vide
+
+Donc si une bombe est entre deux cases indestructibles en X; elle n'est pas
+connue comme dangereuse pour la ligne mais pour la colonne, donc le micro
+évitera la colonne de façon générale.
+
+Le micro pour savoir s'il doit craindre de la ligne ou de la colonne 
+(protection par un bonus, un mur desctructible..), fait une boucle
+de "regard".
+
+Problème: 
+
+    X X X X
+1      
+    X XOXMX
+2    O  LM
+    X X XMX
+3     A B
+
+     1 2 3
+
+Il faut que le (L)ego trouve la case libre A ou B.
+
+
+Ligne 1: Libre
+Ligne 2: Danger
+Ligne 3: Libre
+Colonne 1: Danger
+Colonne 2: Danger
+Colonne 3: Libre
+
+Il faut prendre en compte que les inter colonnes sont libres si la ligne
+est libre et que les inter lignes sont libres si la colonne est libre.
+
+Ligne 1-2: Libre pour les colonnes sans danger, donc 3
+Ligne 2-3: Libre pour les colonnes 3
+Ligne 3-4: Libre pour les colonnes 3
+
+En lisant la liste des colonnes, on sait tout de suite si toutes les inter
+lignes sont libres.
+
+Colonne 1-2: Libre pour les lignes 1,3
+Colonne 2-3: Libre pour les lignes 1,3
+Colonne 3-4: Libre pour les lignes 1,3
+
+Il faut que le LEGO rejoigne soit une case de bifurcation libre;
+- ligne 1
+- ligne 3
+- colonne 3
+
+Ou alors qu'il rejoigne une inter-case libre,
+donc:
+- inter ligne de colonne 3	Donc on retrouve colonne 3
+- inter colonne de ligne 1	donc on retrouve ligne 1
+- inter colonne de ligne 3	donc on retrouve ligne 3
+
+
+BASE:
+Très simple même sans routage:
+
+Le lego est à la demi-colonne X, il faut juste qu'il trouve la colonne
+la plus proche de lui libre.
+Il est possible qu'aucune colonne ne soit libre, mais la ligne juste au dessus
+dans un inter colonne (entre deux blocs H et B).
+
+Le lego est à la position X,Y et il faut qu'il aille en position X',Y'
+qui est une ligne et une colonne libres.
+
+Donc il bouge de façon simple, en rapprochant sa position de la position cible.
+Cas de conscience:
+
+  X X X X
+   B
+  X X X X
+       L
+  X X X X
+
+
+Le lego doit aller à une colonne soit à gauche soit à droite, il ne sait pas
+laquelle car les deux sont libres.
+Comme la colonne est forcément libre, la différence se fait au niveau de 
+la ligne, mais seulement si L est entre deux blocs en X (il doit d'abord
+choisir une ligne, haut ou bas, avant d'aller à gauche ou droite).
+
+Dans le cas où la colonne libre est à plus de 1 colonne de distance, il faut 
+choisir une route entière qui soit le moins dangereuse possible.
+Il faut combiner la ligne et la colonne.
+
+
+
+
+
+

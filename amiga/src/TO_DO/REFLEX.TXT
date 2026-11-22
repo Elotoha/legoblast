@@ -1,0 +1,88 @@
+
+
+Reflexion de l'ordinateur a LegoBlast
+
+BUT A RESPECTER: Faire un micro qui joue MAIS NE PAS CHERCHER A FAIRE UN TRUC PARFAIT.
+Il faut juste qu'il ne soit pas trop con et surtout qu'il reflechisse VITE !
+
+
+
+Truc rapide et simple pour savoir si une case est menacée par une bombe :
+
+**************
+* SOLUTION I *
+**************
+
+Tableau des cases menacees par la bombe en fonction de la puissance (equivaut au temps restant avant que la 
+case ne soit detruite).
+
+		*
+		2
+		1
+	   *43210123456789		Taille de reflexion limitee a 255 pas (.B)
+		1	10
+		2	11
+		3	12 13 14 15 *
+		*
+
+Probleme: Je ne sais pas comment appliquer cela rapidemment.
+
+***************
+* SOLUTION II *
+***************
+
+Comme precedemment, mais chaque tableau ne contient qu'un "1" ou un "0" en fonction de l'atteinte de la case
+par l'explosion ou non.
+
+Probleme: On ne tient plus en compte la portee de la bombe:
+			 L'ordinateur sera nul dans des levels comme hardlevel...
+
+	* On ajoute le tableau de la bombe au tableau general quand la bombe est sur le point de peter.
+
+Boucle
+	Add.l	(A0)+,(A1)+	On additionne 4 cases d'un coup.
+
+
+
+Probleme: L'ordinateur aura peur d'une bombe qui est a 250 cases meme si elle n'a qu'une portee de 10.
+Solution de facilite: Faire 256 tableaux, un par portee de bombe, ou 64 tableaux (precision de 4 cases)
+Cela FERAIT EN MEMOIRE: (19*13)^2*64 = 169*169*64 = 28561*64 = 1.827.904 pour simuler... hum! un peu trop !
+
+Je limite la taille de reflexion a 200Ko MAX, cela autoriserait > 7 < portees differentes.
+Difficile dans ces cas de faire reflechir.
+A ce niveau, si on prend une representation, je me limite a 5 : >>>>> 140 Ko <<<<<
+On aurait: Petite (<=5), Moyenne (jusque 10), Grande (jusque 15), T.Grande (jusque 30), Immense (>30=150 de test)
+
+Probleme: Une fois que l'on a ajoute la bombe au tableau general des bombes, si on est bloque, on ne sait
+plus du tout quelle bombe va peter avant l'autre.
+
+Solution de rechange: Au lieu de faire 1 tableau general des bombes, on en fait 2: un
+qui est destiné à être rempli a "T-5 secondes", et le second a "T-1 seconde"
+
+De cette facon, en reglant les 2 delais d'apres des tests, on pourra determiner le meilleur rendement
+pour les types "dynablaster" comme pour les types "hard level".
+En 5 secondes, on a le temps de faire toute une hauteur, et en 1 seconde, on a le temps de passer un angle.
+
+Probleme: si la bombe BOUGE:
+- On ne la copie pas dans le tableau des explosions tant qu'elle bouge
+- Si une bombe etait fixe et qu'elle se met a bouger, on l'enleve du tableau des explosions
+ - Les 2 mesures precedentes s'appliquent avec la restiction suivante: L'axe de mouvement de la bombe 
+est note dans les tableaux, et lorsque l'on enleve une bombe qui se met a bouger, on n'enleve que son axe
+perpendiculaire au mouvement. De cette facon l'ordinateur ne restera pas face a une bombe 
+qui rebondit contre les murs.
+Cependant, il ne pourra pas prevoir qu'une bombe qui bouge dans sa direction en Y explosera au moment ou le
+Y de la bombe sera le Y du joueur. Mais cela est tellement dur a regler pour un humain qu'il merite de tuer
+l'ordinateur si il a reussi son coup de timing ! ;-)
+Et puis ce n'est pas tres grave...
+
+
+
+
+****************
+* SOLUTION III *
+****************
+
+
+
+
+

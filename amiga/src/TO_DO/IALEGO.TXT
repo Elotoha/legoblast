@@ -1,0 +1,165 @@
+
+**************** NOTES CONCERNANT LES ROUTINES D'I.A POUR LEGOBLAST
+*
+*
+*
+*
+
+
+1/ Routage
+        A) Rencontre de bonus
+                Sauvegarde dans un tableau du type de bonus, de sa distance,
+                du total des dangers parcourus
+                Ces informations seront … prendre en compte pour choisir
+                quel bonus aller rechercher. Cela peut devenir compliqu‚ 
+                pour les groupes de bonus.
+        B) Rencontre de mur
+                On garde en m‚moire seulement 4 types de mur :
+                case adjointe a 1 mur
+                case adjointe a 2 murs
+                et case au milieu de 3 murs
+                On sauve, idem, la distance et la somme du danger
+                travers‚.
+        C) Rencontre de bombe
+                On marque dans un tableau la distance et l'etat
+                actuel du temps de celle-ci.
+                On remplit EN ARRIERE dans le tableau toute la
+                ligne comme ‚tant Danger N
+                (Si le routage accŠde … la mˆme bombe 2 fois,
+                on fait 2 fois le traitement, tout simplement).
+        Avantage de cette technique: On ne prend en compte que les
+        bombes qui peuvent avoir une influence sur le personnage.
+        Seule contrepartie: Cela oblige … continuer le routage 
+        jusqu'au bout pour ˆtre certain du r‚sultat. Exemple
+        typique: une bombe … l'autre extr‚mit‚ du tableau...
+
+        D) Rencontre de flammes
+                On marque toute la ligne en arriŠre comme ‚tant danger N
+                si la flamme est dans le sens inverse de la tˆte de 
+                routage seulement. 
+                Peut-ˆtre le fait de rencontrer une flamme sans
+                tˆte est-il un problŠme ?... Non en fait.
+                Pour pouvoir distinguer les tˆtes, il suffit de
+                faire un "Btst".
+
+                ************
+                     --->
+                 * * *     *
+                       
+                 * * * * * *
+
+2/ Mesure du poids de chaque possibilit‚ 
+        - Fuir
+        - Poser une bombe
+        - Chercher bonus
+        - Se balader
+
+
+INFOS POUR LE ROUTAGE
+
+Plus la distance est importante, plus le danger s'incr‚mente
+puisque le temps des bombes sera plus important lorsque l'on arrivera
+vers elles.
+
+Si une des tˆtes de routage se retrouve confront‚e … un danger mortel,
+c'est … dire … une explosion en cours, elle s'arrˆte. Cela permet
+entre autres de limiter le temps de routage.
+
+Prenons le cas d'une machine lente pour programmer l'I.A.
+Cela impliquer un schedule du routage et des remplissages de flammes etc...
+Le joueur r‚agit de la fa‡on suivante:
+
+t=1/  Pas de mouvement
+t=1'/ Routage en cours 
+
+t=2/  Routage termin‚: direction vers le but
+      Routage non termin‚ et but atteind: Pas de mouvement
+t=2'/ Routage en cours (depuis le but)
+
+Avec cette technique, le micro ne peut pas changer de direction 
+en cours de d‚placement, ce qui le rend peut-ˆtre beaucoup plus vuln‚rable.
+Mais cela a l'avantage d'ˆtre multitache et de pouvoir scheduler le
+travail de facon COMPLETEMENT INVISIBLE aux joueurs humains.
+Le temps machine allou‚ … l'ordinateur … chaque VBL pour faire son 
+routage peut-ˆtre d‚termin‚ par asservissement : Un compteur 
+d‚termine en combien de VBL le jeu tourne en fonction du temps 
+pris et du nombre de bombes, pour que le jeu tourne toujours en
+une Vbl. Cela constituera un tableau. DŠs qu'une valeur de temps
+pour un Nombre de bombes=N est inf‚rieure … la valeur actuelle,
+on met dans TOUTES LES CASES de Nombre de bombesN'>N le
+Min(T[N],T[N']). Cela a pour avantage de cr‚er trŠs rapidemment un
+tableau avec des valeurs … ne pas d‚passer. ProblŠme: cela 
+cr‚era forc‚ment un ralentissement au d‚but jeu. (Sauf 68060 :-)).
+Solution: Il faut cr‚er un tableau pr‚-‚tabli en fonction d'un 
+test rapide de la machine.
+
+**** POSSIBLE: Compte tenu du fait que le routage peut-ˆtre entiŠrement
+multitache si il est correctement schedul‚, on peut envisager
+de faire des routines de recherche extremement performantes:
+- Routage … partir de chaque bombe, en fonction des tuyaux, etc...
+  pour d‚terminer le danger de chaque case.
+- Recherche des bonus et murs les plus proches et les moins dangereux
+- Recherche de l'endroit de danger le plus faible. En fonction de la
+  vitesse du joueur, s'il peut etre atteind seulement, y aller si  
+  les positions mur et les positions bonus sont de danger sup‚rieur.
+- Pour d‚terminer les cul-de-sac: Le centre donne … chaque tˆte le
+nombre de tˆtes.
+  
+           121  *****************
+       121 120  121  122        *
+       ***  1   *****************
+         *  1   *
+         *  2   ******
+      2           1
+
+********************************************
+
+DECISIONS A L'ISSU DU ROUTAGE
+
+Rappel:
+1 - On route
+2 - En routant on remplit les cases avec un degr‚ de danger
+        (Intersection de dangers: Max(D1,D2) et non pas D1+D2)
+3 - On parcourt chaque chemin de but pour calculer les sommes de danger
+4 - On prend la d‚cision de l'endroit o— le joueur va aller.
+
+Il faut prendre une d‚cision en fonction des rencontres de:
+
+        A) Bonus 
+        B) Murs
+
+(Puisque les rencontres de bombes et flammes se font au fur et … mesure)
+Le joueur pose une bombe dŠs qu'il le peut si il peut bouger mais
+uniquement sur une case de danger minime et SSI sa case but du
+routage ne se trouve pas dans l'alignement X ou Y de la coordonn‚e
+de cette bombe.
+Faits … prendre en compte; Politique … tenir: SECURITE
+
+- Plus l'objet est distant du joueur, moins il est important 
+- Plus le parcours est dangereux, moins il est privil‚gi‚ (S‚curit‚)
+- Un bonus (Interet=5-15) est plus important qu'un mur (Interet=1)
+
+Importance=Interet/(Distance*Danger)
+
+Pour que le programme soit efficace, il faut qu'il puisse atteindre
+a coup s–r sa cible si rien ne change. C'est … dire qu'il faut
+que ses pr‚visions d'explosions soient fiables. Seul probleme … r‚soudre:
+reactions en chaine... Mais si il essaye toujours d'‚viter le moindre
+danger, cela peut suffire … masquer ce d‚faut.
+
+******************* REGLE D'OR A APPLIQUER A CHAQUE VBL ****************
+Pour privil‚gier la s‚curit‚, il ne faut faire bouger le joueur 
+seulement si son but est sujet … un danger
+inf‚rieur ou ‚gal … celui de la case sur laquelle il se trouve.
+************************************************************************
+
+Cette r‚gle d'or peut cr‚er un "dilemne" au joueur en le faisant
+changer sans arrˆt son parcours.
+SAUF dans le cas pr‚sent, c'est … dire le cas o— il va d'un point
+… un autre "sans se retourner"
+
+
+
+
+
+

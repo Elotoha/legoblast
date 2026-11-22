@@ -1,0 +1,23 @@
+
+**************** NOTES CONCERNANT LES ROUTINES D'I.A POUR LEGOBLAST
+*
+*
+*
+*
+
+
+1/ Routage
+        A) Rencontre de bonus
+                Sauvegarde dans un tableau du type de bonus, de sa distance,
+                du total des dangers parcourus
+                Ces informations seront … prendre en compte pour choisir
+                quel bonus aller rechercher. Cela peut devenir compliqu‚ 
+                pour les groupes de bonus.
+        B) Rencontre de mur.
+
+
+2/ Mesure du poids de chaque possibilit‚ 
+        - Fuir
+        - Poser une bombe
+        - Chercher bonus
+        - Se balader

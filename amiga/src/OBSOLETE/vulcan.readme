@@ -1,0 +1,203 @@
+
+
+   Hi! Gogo Speaks :
+               GOGO: LETONDOR EMMANUEL
+                  13 LES BRUYERES
+                  69380 CHESSY
+                  FRANCE
+
+
+
+
+  I received your mail and i thank you for that, and here is the answer.
+
+I know i'm very late (more than one month), but that's due to the fact than
+since 04/02/1997 i'm at army (military service). But that time wasn't
+wasted, because i continued the project with energy...
+
+[ Please scuse me for that readme, i've no printer... ]
+
+This version of LegoBlast is a Work-in-progress version... REALLY !
+The game appearance could change radically, screen resolution could
+change, a lot of ideas have to be coded... And when i can't code,
+i'm thinging about really-fun and new modes. I found pipes idea 2 weeks
+ago, and i've a pacman-mode which could be cool...
+
+I won't delete and rewrite thousand lines of code,
+but everything else could be done.
+
+  So, you'll find the executable file of the game called "LegoBlast" :
+You said me that a commercialisation of this concept isn't possible,
+due to the appearance of the Lego firm in multimedia, 
+but we don't want to redraw all the guys if you aren't interested a bit
+by this game. (Logic) (If we put this game on aminet, i think we won't have 
+license problems....) 
+
+The game is coded 100% ASM.
+
+This is a very-first preview.
+- Program is far to be finished, no menu yet.
+  In appearance it could seem to be soon-finished : We can play, 
+  sounds, music, etc... But I have a LOT of things to code.
+  For example two weeks ago i coded&"drawed" (cloned) bomb-freezing
+  in blue instead of a normal bomb with no animation. This was 
+  a little detail in my TO-DO things, but it took me time... And this 
+  morning i finished pipes...
+- We only have one music for the instance. (We have some conversion
+  problems with P6. We must modify musics with protracker...it's not my problem,
+  but music-man one!)
+- Each Graphic could be redrawn,(Ground, Walls) and perhaps passed in Hires mode.
+  (The Hires mode would be exactly the same speed, because a Move.l takes 
+  the same time as a Move.w (if the Move.l is long word aligned, of course).
+  I just code "one-palette-per-level" mode, but i hadn't enough time yet to
+  create ingenious levels. Since i've made a level editor, everything
+  can be easyly modified... I think that many level will be reworked.
+  All the bonus and blocs we done aren't "freezed" : Everyone in the
+  group often modifies one bonus to improve it, or sometimes someone
+  finds a new icon-idea and draws it ... So nothing is freezed.
+- Most of the sounds must be changed. (For example bonus-get, dead ...) 
+- I had code pipes. I think this will add a great think
+  to the game. This will permit to attack a player from 2 ways 
+  with one explosion... And it could be very beautiful with glass-pipes, 
+  when we'll see explosions in transparent. (I'll surely have to use
+  a seventh planar, to do exactly the same thing as a EHB mode, 
+  for all transparent-glasses mode)
+- Level editor isn't finished yet (AMOS). I continue it every week...
+  Two weeks ago, i've included teleport-handling in editor. 
+  Last week, i've included bonus probabilities.
+  This week, i've included pipes handling.
+  When it will be totally finished, i'll have to think about 
+  the possibility of using external levels during execution. (For the
+  instance all levels are included during compilation).
+- Since the executable is about to become a very big file, we'll surely
+  have to make a multi-file game, instead of a one-file one.
+  (This could allow to the user the possibility of changing samples,
+  so it could be a great idea)
+- I must take real screen initialisations for all Workbench resolutions from
+  another code. (Not hard but i've a lot of things to do before... ;-) )
+- For the instance, the game uses a 320x256x64 and a 640x18x64 screens,
+  but it's in our intention to modify it to get a 640x274x64 screen,
+  (so all in hires), and perhaps more than 64 colours if needed.
+  The changement between Lowres and Hires mode will need:
+  - to double all graphics, so it will double the graphics size in memory
+    (Not really a problem since all blocs take about 50 ko)
+  - to modify all graphics routines, Move.L instead of Move.W, and
+    the most difficult due to a lack of registers : The planars offsets
+    will be doubled, so i'll have to adress all planars in long mode...
+    (Move.L D0,(A0,D0.L) Instead of Move.L D0,2*SizePlanar(A0) ) 
+- Cobalt and Black Angel recently started an animation project of a new guy,
+  in the case we can't use lego-guys animations... 
+- For the instance, most of the bonus are the common ones, but we found
+  a few ideas to use a maximum of game's possibilities.
+    For example, the "superman" mode, the "nervous" mode, new blocs,
+  as the pipe, at 90° or 180°, which modifies explosions' direction,
+  or the "bouncers" which affects bombs (and players ?)...
+  We also wanted to make automatic-ground, which drives bombs and players
+  in any directions.............
+  I also though : a ventilator, which could be able to "push" bombs...
+
+We have a LOT of ideas and projects... some could be very great...
+
+
+So the executable is here to show you the actual progress of the project.
+
+Things that Works:
+- 320*256*64 colors
+- 4 players
+- Teleportations
+- Bomb freezing
+- Bomb pushing
+- "Bomb movement energy handling" :   A -> BCDEF will do ABCDE -> F
+- End of level board reducing
+- Setting for each level the probability of each bonus :
+  70% of chances to see an empty bloc when a wall is blasted
+  10% of chances to get a bomb bonus when i blast a wall, 
+  20% of chances to get a water bonus etc etc...
+  This permits to enable/disable bonus when we want :
+  For example if i don't want bonus in level 4, i do :
+  100% of chances to get an empty bloc when i blast a wall 
+- I'm coding pipes.
+- ALL variables are initialised at the beginning of each level, so you can
+  change level during bomb explosions with no problems...
+- And ALL the things i can't remember... the best way to find every 
+  things is to play during at least one hour... 
+- One palette per level (permits "worlds")
+- One explosion per level (could be great with cool explosions)
+
+Personnaly, i played on a standard A1200 and on a BlizzardIV (mine),
+and the game NEVER reboot during game.
+
+The game is fast enough even on a standard A1200, but i've not tested
+pipes on it. Indeed, each collision of an explosion with a pipe 
+duplicates it, so with lame levels, you can produce slowings easily ;
+I made a level in which the explosions are duplicated in loop :
+with ONE bomb, i made my Amiga slowing down...
+But if levels are clever done, these case would not be produced.
+
+
+For information, the little time before game starting is done
+to wait disk activity when i "compile+run" my prog, so i can leave it.
+If you test it on 68040 or 68060, thanks to say me the result: works or not ?
+
+  So the most important thing we (Proxima) would want to know is if we must 
+developp this game for DP, or if it has a chance to be selectionned by you when
+it will be finished.
+Of course, we'll take a big care of your remarks and questions...
+
+
+                                                        Gogo/Proxima
+
+
+CONTROLS
+--------
+F1: Previous Level
+F2: Next level
+HELP: Replay level
+ESC, Right mouse button: Quit game
+S: Mode normal/Very slow (for debug)
++/-: Music Volume
+P: Pause
+
+This version is configured for Joy1, Joy0 and Keyboard (Arrows+RAlt).
+(Since i didn't code menus yet, configuration is done in the code)
+
+The last player is destined to be a computer. 
+DjThunder must code computers but he doesn't know anything of my
+program, so i prepared all required functionnalities to include
+computer routine instead of joystick one.
+
+
+PROXIMA's TEAM
+--------------
+CODE:              GOGO
+GFX:               COBALT
+                   BLACK ANGEL
+SOUND/MOD:         POWERB 
+I.A. CODE:         DJTHUNDER
+
+
+For information, we've done two AMOS games you can find on aminet.
+Of course, they couldn't be sell, because theirs concepts are not
+new... (Just a cool innovation in worms-game: the possibility of
+"walking" UNDER walls, and perhaps the team mode...)
+
+- Think/CardGame.lha             A Card-Game! The computer really
+                  thinks as a normal player, that's
+             all the interest.
+- Game/2Play/Wormsigns.lha  I started it for fun.
+                                 (i though "Viper" was too great for me.)
+                                 But i continued that a bit, and the only
+                                 reason for what we finished it (Graphic
+             men then started producing screens...)
+                                 is the number of players : 12
+                                 In aminet you'll only find the preview.
+                                 (10 players only, due to a bug)
+                                 We have sent final version to 
+                                 Amiga Dream... No answer yet... as always.
+             (They had never answered us...)
+
+
+
+So i let you test it while i go back to my code... I have to code
+timer displaying now...
+

@@ -1,0 +1,91 @@
+
+********************************
+* ROUTINE DE LEGOBLAST by GOGO *
+********************************
+*
+* Routine de "line" (Pour le jeu: Affichage de d‚but de Level)
+*
+* Je vais essayer de faire du ligne … ligne afin de ne faire qu'un
+* seul move pour tous les ‚ventuels points de la ligne.
+* Pour une ligne horizontale, ou qui tendraot … l'ˆtre, cela se complique
+* puisque je serai s–rement oblig‚ de faire plusieurs Move pour faire
+* le "Draw".
+*
+*
+* D0: X1
+* D1: Y1        Avec Y1<=Y2
+* D2: X2
+* D3: Y2        
+*
+* DeltaX(Y)=(X2-X1)/(Y2-Y1)
+* Il faut donc faire DeltaX points par ligne pour un Y
+* ProblŠme … prendre en compte: le DeltaX sera un nombre r‚el, ce
+* qui oblige … faire une virgule fixe d'environ 16 bits.
+*
+DrawLine
+        Cmp.w   D1,D3            
+        Bge.s   .OkY
+        Exg     D1,D3
+        Exg     D0,D2
+.OkY    Sub.w   D0,D2   D2: X2-X1 (<,=,ou >0)
+        Sub.w   D1,D3   D3: Y2-Y1 (>=0)
+        Beq.s   .Horiz
+        Clr.l   D4
+        Move.w  D2,D4
+        Swap    D4
+        Divs.w  D3,D4   D4=DeltaX<<16
+        Move.w  D0,D5   D5: M‚moire du dernier X pour soustraction
+        Swap    D0
+        Move.w  #$7FFF,D0       D0=X1<<16+0.5 pour arrondi auto
+.LoopY  Add.l   D4,D0   Prochain X
+        Move.l  D0,D6
+        Swap    D6      D6=X Actuel
+        Move.w  D5,D7
+        Move.w  D6,D5   D5=X Actuel
+        Sub.w   D7,D6   D6=X Actuel-X Ancien=Nombre de points … faire
+        *
+        Move.w  D5,D7
+        And.w   #%111,D7
+
+        * D‚cision: Pour l'instant je n'ai pas besoin vraiment d'une
+        * routine de "line" adaptable … n'importe quelle situation,
+        * je vais donc faire une routine horiz et une vert.
+
+        Dbf     D3,.LoopY
+
+        RTS
+
+*********** Tracer une ligne verticalement
+*
+* A2: Adresse du premier plan
+* D0: X
+* D1: Y1
+* D3: Y2
+* D6: Masque sur les plans (couleur)
+* D7: Nombre de plans
+*
+.LineVert
+        Sub.w   D1,D3
+        Move.w  D0,D4
+        Lsr.w   #3,D0
+        Ext.l   D0
+        And.w   #%111,D4
+        Neg.w   D4
+        Add.w   #7,D4
+        Mulu.w  #SizeLine,D1
+        Add.l   D0,D1
+        Subq.w  #1,D7
+.LoopPl Lea     (A2,D1.l),A3
+        Move.w  D3,D5
+        Lsr.w   #1,D6
+        Bcc     .NexPl
+.LoopY  Bset    D4,(A3)
+        Adda.w  #SizeLine,A3
+        Dbf     D5,.LoopY
+.NexPl  Adda.w  #SizePlan,A2
+        Dbf     D7,.LoopPl
+        RTS
+
+
+
+

@@ -1,0 +1,33 @@
+failat 200
+makedir ram:lego
+assign lg: ram:lego
+makedir lg:binary
+makedir lg:mods
+makedir lg:sons
+;                   MAIN
+cd asm:lego/
+copy legoblast.prefs lg:
+copy legoblast lg:
+copy legoblast.info lg:
+copy lego17 lg:
+copy samples.def lg:
+
+;                   BINARY
+cd binary
+copy Menu#?.raw lg:binary/
+copy podium#?.raw lg:binary/
+copy proxima.crp lg:binary/
+copy lego_sprites#?.dat lg:binary/
+
+;                   MODS
+cd /
+;copy mods/#? lg:mods/
+
+;                   SONS
+;copy sons/#? lg:sons/
+
+;                   ARCHIVAGE pour en faire une disquette
+cd lg:
+lha a -r ram:Lego.lha lg:
+
+

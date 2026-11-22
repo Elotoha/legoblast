@@ -1,0 +1,52 @@
+
+Pour faire un replay dans LegoBlast:
+
+Il faut stocker à intervalle régulier toutes les 
+structures et les variables pour pouvoir reprendre
+n'importe quand, et stocker les informations de tous
+les joueurs concernant leur mouvement en X, en Y, et
+en FEU à chaque fois qu'ils ont la main, et SEULEMENT
+quand ils ont la main! pas pendant les téléportations
+par exemple, comme ça on économise de la place.
+
+On a besoin d'un .W:  
+4 bits Mvt X
+4 bits Mvt Y
+1 octet Fire... ca fait 12 octets/Vbl, 600 octets/s
+
+- 1/ Sauvegarde structures
+- 1/ 5 secondes de replay
+- 2/ Sauvegarde structures
+- 2/ 5 secondes de replay
+
+Comme ça la prochaine sauvegarde se fera sur le 1,
+et on aura de 5 à 10 secondes de replay.
+
+Mais on souhaite surtout pouvoir gérer exactement le
+temps du replay, alors:
+On aurait besoin des maladies, pas pratique !
+
+Liste à faire de toutes les maladies:
+- inversion
+- poser bombes
+- interdiction poser bombes
+- Petites flammes  <-
+- Bcp de bombes
+- Grandes flammes (maladie ou permanent) <-
+- pousse bombes
+- Gele bombes
+- 
+
+
+Le problème est de sauvegarder à intervalles réguliers toute une structure
+flammes et bombes...
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,1765 @@
+	********** Double buffer
+	*
+	*
+DoubleBuff
+	*** Copie brute de l'écran de travail
+	
+	Move.l	Planar,A0		Travail
+	Moveq	#4,D0
+	Sub.l	PlanAct,D0
+	Lea	Planar2,A1
+	Move.l	(A1,D0.w),A1
+	Move.l	#(SizePlan*NbPlans)/(12*4)-1,D0    Ca fait 1280-1=1279
+.Loop	Movem.l	(A0),D1-D7/A2-A6		12 registres
+	Movem.l	D1-D7/A2-A6,(A1)
+	Adda.l	#12*4,A0	
+	Adda.l	#12*4,A1	
+	Dbf	D0,.Loop
+
+	*** Swap des écrans CHIP
+	
+	VblWait	#145	
+	Moveq	#4,D0
+	Sub.l	PlanAct,D0
+	Move.l	D0,PlanAct
+	Lea	Planar2,A1
+	Adda.l	D0,A1
+	Move.l	CopPlanAdr,A0
+*	CopPlan	A1,#SizePlan,#NbPlans
+	RTS
+
+***********************************************************************
+
+	********* Afficher les 4 cases a la position donnée
+	*         en fonction de leur type (mur, bonus, etc...)
+	*           - Après un mouvement de bombe, pour effacer l'ancienne
+	*           bombe.
+	*           - A CHAQUE mise à jour de flamme (Ajout/Suppression)
+	*           Dans ce cas il faut lire le masque de flammes (8 bits)
+	*         Il faut lire le type 4 fois, et si il y a une bombe
+	*         sur certaines cases on ignore celles-ci, car elles
+	*         vont etre retracees avec TraceBomb
+	* X: D6
+	* Y: D7     
+Affiche
+	Movem.l D0-D7/A0-A5,-(A7)
+
+	Move.w	D7,D0
+	Lsl.w	#6,D0
+	Add.w	D6,D0		>>> D0=Y*64+X
+	Ext.l	D0
+
+	Mulu.w	#8*SizeLine,D7	Calcul de l'offset de la case
+	Ext.l	D6
+	Add.l	D6,D7
+	Movea.l	D7,A3
+	Adda.l	RenderBase,A3	>>> A3=Offset sur l'écran
+
+	Movea.l	Dim4,A2		>>> A2=Dim4
+
+	Move.l	#SizePlan,D5
+	Move.l	D5,D3
+	Add.l	D5,D3
+	Add.l	D5,D3	3*SizePlan
+	Move.l	D3,D4
+	Add.l	D5,D4	4*SizePlan
+	Add.l	D4,D5	5*SizePlan
+
+	Bsr	TraceLittle	(X,Y)
+
+	Addq.w	#1,D0
+	Adda.w	#1,A3
+	Bsr	TraceLittle	(X+1,Y)
+
+	Add.w	#64,D0
+	Adda.w	#SizeLine*8,A3
+	Bsr	TraceLittle	(X+1,Y+1)
+
+	Subq.w	#1,D0
+	Suba.w	#1,A3
+	Bsr	TraceLittle	(X,Y+1)
+
+	Movem.l (A7)+,D0-D7/A0-A5
+	RTS
+
+
+	******	Afficher 2 little cases en X
+	*
+	*
+Affiche2X
+	Movem.l D0-D6/A0-A5,-(A7)
+
+	Move.w	D7,D0
+	Lsl.w	#6,D0
+	Add.w	D6,D0		>>> D0=Y*64+X
+	Ext.l	D0
+
+	Mulu.w	#8*SizeLine,D7	Calcul de l'offset de la case
+	Ext.l	D6
+	Add.l	D6,D7
+	Movea.l	D7,A3
+	Adda.l	RenderBase,A3	>>> A3=Offset sur l'écran
+
+	Movea.l	Dim4,A2		>>> A2=Dim4
+
+	Move.l	#SizePlan,D5
+	Move.l	D5,D3
+	Add.l	D5,D3
+	Add.l	D5,D3	3*SizePlan
+	Move.l	D3,D4
+	Add.l	D5,D4	4*SizePlan
+	Add.l	D4,D5	5*SizePlan
+
+	Bsr	TraceLittle	(X,Y)
+	Addq.w	#1,D0
+	Adda.w	#1,A3
+	Bsr	TraceLittle	(X+1,Y)
+	Movem.l (A7)+,D0-D6/A0-A5
+	RTS
+
+
+	****** Afficher 2 little cases en Y
+	*
+	*
+Affiche2Y
+	Movem.l D0-D6/A0-A5,-(A7)
+
+	Move.w	D7,D0
+	Lsl.w	#6,D0
+	Add.w	D6,D0		>>> D0=Y*64+X
+	Ext.l	D0
+
+	Mulu.w	#8*SizeLine,D7	Calcul de l'offset de la case
+	Ext.l	D6
+	Add.l	D6,D7
+	Movea.l	D7,A3
+	Adda.l	RenderBase,A3	>>> A3=Offset sur l'écran
+
+	Movea.l	Dim4,A2		>>> A2=Dim4
+
+	Move.l	#SizePlan,D5
+	Move.l	D5,D3
+	Add.l	D5,D3
+	Add.l	D5,D3	3*SizePlan
+	Move.l	D3,D4
+	Add.l	D5,D4	4*SizePlan
+	Add.l	D4,D5	5*SizePlan
+
+	Bsr	TraceLittle	(X,Y)
+	Add.w	#64,D0
+	Adda.w	#SizeLine*8,A3
+	Bsr	TraceLittle	(X,Y+1)
+	Movem.l (A7)+,D0-D6/A0-A5
+	RTS
+
+
+
+	*********** Tracer une petite case : Flamme + Font, c'est TOUT
+	* USAGE: Mouvement de flamme, mouvement de bombe
+	*
+	*  Ca ne fait que des Move.B
+	* Pour le font, on fait comme dab, c'est à dire utilisation
+	* de l'image totale (Stockée en Fast) Donc avec modulo
+	*
+	* A3: Offset de la case
+	* A2: Dim4
+	* D0: Y*64+X
+	* D3: 3*SizePlan          
+	* D4: 4*SizePlan
+	* D5: 5*SizePlan
+TraceLittle
+	Movea.l	Planar,A0
+	Movea.l	FontPtr,A1
+	Adda.l	A3,A0		A0: @ case en plan
+	Adda.l	A3,A1		A1: @ font	
+
+	Movea.l	Dim2,A5
+	Move.w	(A5,D0.l*4),D1
+*	Cmp.w	#Type_Bombe,D1
+*	Beq.s	.NoAb
+*	Tst.w	D1
+	Bne	.Aband		Visible <>0 ? on se casse !
+.noAb	
+*	Cmp.w	#Type_Bloc_NoDestr,D1	Bloc ? rien !
+*	Beq	.Aband
+
+
+	Move.l	D0,D1
+	Lsl.l	#4,D1
+	Lea	(A2,D1.l),A4
+	Clr.l	D1
+	Move.b	Dim4_Mask(A4),D1		Masque actuel pour la case	
+	Beq	.OptzF		0 ? : Pas de flammes: copie bête !
+	
+	Movea.l	FlamDatPtr,A4	Flammes font 8*8 en 6 pl + masque
+	Mulu.w	#8*7,D1		
+	Lea	(A4,D1.w),A4	Adresse morceau flamme
+	
+	Moveq	#7,D6
+.BoucleY	Move.b	(A4)+,D1		Masque pour les 6 plans
+	Beq.s	.Optz
+
+	Move.b	(A1),D2			Font (fast)
+	And.b	D1,D2			Font masqué
+	Or.b	(A4)+,D2			+Flamme
+	Move.b	D2,(A0)			(chip)
+
+	Move.b	SizePlan(A1),D2		Font (fast)
+	And.b	D1,D2			Font masqué
+	Or.b	(A4)+,D2			+Flamme
+	Move.b	D2,SizePlan(A0)		(chip)
+
+	Move.b	SizePlan*2(A1),D2		Font (fast)
+	And.b	D1,D2			Font masqué
+	Or.b	(A4)+,D2			+Flamme
+	Move.b	D2,SizePlan*2(A0)		(chip)
+
+	Move.b	(A1,D3.l),D2
+	And.b	D1,D2	
+	Or.b	(A4)+,D2	
+	Move.b	D2,(A0,D3.l)	
+
+	Move.b	(A1,D4.l),D2
+	And.b	D1,D2	
+	Or.b	(A4)+,D2	
+	Move.b	D2,(A0,D4.l)	
+
+	Move.b	(A1,D5.l),D2
+	And.b	D1,D2	
+	Or.b	(A4)+,D2	
+	Move.b	D2,(A0,D5.l)	
+
+	Adda.w	#SizeLine,A0
+	Adda.w	#SizeLine,A1
+.EndLoop	Dbf	D6,.BoucleY		
+.Aband	RTS
+
+* Optz1: Font non apparent: Que de la flamme
+.Optz	Move.b	(A4)+,(A0)
+	Move.b	(A4)+,SizePlan(A0)
+	Move.b	(A4)+,2*SizePlan(A0)
+	Move.b	(A4)+,(A0,D3.l)
+	Move.b	(A4)+,(A0,D4.l)
+	Move.b	(A4)+,(A0,D5.l)	
+	Adda.w	#SizeLine,A0
+	Dbf	D6,.BoucleY
+	RTS
+	
+* Optz2: QUE du font ! (Pas de flamme sur la case)
+.OptzF	Moveq	#5,D6		6 plans à faire
+.LoopOF	Move.b	(A1),(A0)	
+	Move.b	1*SizeLine(A1),1*SizeLine(A0)
+	Move.b	2*SizeLine(A1),2*SizeLine(A0)
+	Move.b	3*SizeLine(A1),3*SizeLine(A0)
+	Move.b	4*SizeLine(A1),4*SizeLine(A0)
+	Move.b	5*SizeLine(A1),5*SizeLine(A0)
+	Move.b	6*SizeLine(A1),6*SizeLine(A0)
+	Move.b	7*SizeLine(A1),7*SizeLine(A0)
+	Adda.w	#SizePlan,A0
+	Adda.w	#SizePlan,A1
+	Dbf	D6,.LoopOF	
+	RTS
+
+	***** Afficher un bloc (4 cases), avec masque
+	* A1: Planar
+	* D3: X
+	* D4: Y
+	* D5: N° Bloc
+TraceBlocWithMask
+	Movem.l	D3-D5/A1,-(A7)
+	Lea	BlocDat,A0         Donnees brutes: Masque,BitMap*6
+	Mulu.w	#(1+6)*2*16,D5
+	Lea	(A0,D5.l),A0       >>> A0: Image bloc
+	Mulu.w	#SizeLine*8,D4          Y*Largeur ecran*Hauteur case
+	Ext.l	D3
+	Add.l	D3,D4   	   Adresse relative de la case
+	Move.l	Planar,A1
+	Add.l	RenderBase,A1      Adresse premier pixel haut-gauche tableau
+	Lea	(A1,D4.l),A1       >>> A1: Case cible sur l'écran (Adresse)
+	Bsr	Trace   	   On ne restaure pas le font
+	Movem.l	(A7)+,D3-D5/A1
+	RTS
+
+
+
+	*********** Tracer une grosse case (4 petites) = 16x16 pixels
+	*     Cette fonction ne RESTAURE PAS le font, mais avec masque
+	*     Elle permet de copier une bombe sur une flamme
+	* A0: Adresse du masque/image à copier
+	* A1: Adresse de la case sur l'écran
+	****
+	* D3,D4,D5 : Décalages +3,+4,+5, pour faire 6 plans
+Trace	Move.l	#SizePlan,D5      1 plan
+	Move.l	D5,D3   
+	Add.l	D3,D3          
+	Add.l	D5,D3   	3 plans
+	Move.l	D3,D4
+	Add.l	D5,D4   	4 plans
+	Add.l	D4,D5   	5 plans
+	Moveq	#15,D2
+.LoopY	Move.w	(A0)+,D0	Masque pour tous les plans        
+	Beq.s	.Optz	Si tous les plans de l'image sont pleins
+	Movem.w	(A0)+,D6/D7
+	Move.w	(A1),D1 	Fond    		Plan 0
+	And.w	D0,D1   	Fond masqué
+	Or.w	D6,D1   	Fond + Bombe
+	Move.w	D1,(A1)
+	Move.w	SizePlan(A1),D1   
+	And.w	D0,D1   				Plan 1
+	Or.w	D7,D1        
+	Move.w	D1,SizePlan(A1)
+	Movem.w	(A0)+,D6/D7 
+	Move.w	2*SizePlan(A1),D1 			Plan 2
+	And.w	D0,D1   	
+	Or.w	D6,D1        
+	Move.w	D1,2*SizePlan(A1)
+	Move.w	(A1,D3.l),D1    			Plan 3
+	And.w	D0,D1   	
+	Or.w	D7,D1        
+	Move.w	D1,(A1,D3.l)
+	Movem.w	(A0)+,D6/D7 
+	Move.w	(A1,D4.l),D1    			Plan 4
+	And.w	D0,D1   	
+	Or.w	D6,D1        
+	Move.w	D1,(A1,D4.l)
+	Move.w	(A1,D5.l),D1    			Plan 5
+	And.w	D0,D1   	
+	Or.w	D7,D1        
+	Move.w	D1,(A1,D5.l)
+.FinOpt	Adda.w	#SizeLine,A1
+	Dbf	D2,.LoopY
+	RTS
+
+
+.Optz	Movem.w	(A0)+,D1/D6-D7  	   3 .L = 6 .W
+	Move.w	D1,(A1) 	     Plan 0
+	Move.w	D6,SizePlan(A1)        Plan 1
+	Move.w	D7,2*SizePlan(A1)      Plan 2
+	Movem.w	(A0)+,D1/D6-D7
+	Move.w	D1,(A1,D3.l)         Plan 3
+	Move.w	D6,(A1,D4.l)         Plan 4
+	Move.w	D7,(A1,D5.l)         Plan 5
+	Bra.s	.FinOpt
+
+
+
+**************	Tracer juste un bloc, avec masque et font
+*
+*	A1: Adresse premier plan
+*	A2: Adresse font
+*	D3: X    (0-n)
+*	D4: Y    (0-n)
+*	D5: Bloc (0-n)
+*
+TraceBlocWithFont
+	Movem.l	D0-D7/A0-A4,-(A7)
+	Lea	BlocDat,A0
+	Mulu.w	#2*16*7,D5
+	Lea	(A0,D5.l),A0	A0: BLOC Source
+	Ext.l	D3
+	Mulu.w	#SizeLine*8,D4	Y*N+X
+	Add.l	D3,D4
+	Adda.l	RenderBase,A1
+	Adda.l	D4,A1		A1: CIBLE écran
+	Adda.l	RenderBase,A2
+	Adda.l	D4,A2		A2: CIBLE font
+	Bsr	TraceWithFont
+	Movem.l	(A7)+,D0-D7/A0-A4
+	RTS
+
+	*********** Tracer une grosse case (4 petites) = 16x16 pixels
+	*       	Cette fonction RESTAURE le font
+	*       	Elle permet d'effacer des flammes par exemple
+	* NOTE: Elle est plus rapide que "Trace" parce que la source
+	*       du font est en Fast au lieu de Chip
+	*
+	* NOTE2: On peut utiliser cette routine sans perte de vitesse
+	*        pour tracer un mur plein par exemple
+	*
+	* A0: Adresse du masque/image à copier (genre flamme/bombe/bonus/mur)
+	* A1: Adresse de la case sur l'écran
+	* A2: Adresse de l'image du font 
+	****
+TraceWithFont
+	Move.l	#SizePlan,D5      1 plan
+	Move.l	D5,D3   
+	Add.l	D5,D3          
+	Add.l	D5,D3   	3 plans
+	Move.l	D3,D4
+	Add.l	D5,D4   	4 plans
+	Add.l	D4,D5   	5 plans
+	Moveq	#15,D2
+.LoopY	Move.w	(A0)+,D0	Masque pour tous les plans        
+	Beq.s	.Optz   	Si tous les plans de l'image sont pleins
+	Movem.w	(A0)+,D6/D7
+	Move.w	(A2),D1        Font     	       Plan 0
+	And.w	D0,D1   	Font masqué
+	Or.w	D6,D1   	Font + Bombe
+	Move.w	D1,(A1)
+	Move.w	SizePlan(A2),D1   
+	And.w	D0,D1   				Plan 1
+	Or.w	D7,D1        
+	Move.w	D1,SizePlan(A1)
+	Movem.w	(A0)+,D6/D7 
+	Move.w	2*SizePlan(A2),D1 			       Plan 2
+	And.w	D0,D1   	
+	Or.w	D6,D1        
+	Move.w	D1,2*SizePlan(A1)
+	Move.w	(A2,D3.l),D1    			    Plan 3
+	And.w	D0,D1   	
+	Or.w	D7,D1        
+	Move.w	D1,(A1,D3.l)
+	Movem.w	(A0)+,D6/D7         
+	Move.w	(A2,D4.l),D1    			    Plan 4
+	And.w	D0,D1   	
+	Or.w	D6,D1        
+	Move.w	D1,(A1,D4.l)
+	Move.w	(A2,D5.l),D1    			    Plan 5
+	And.w	D0,D1   	
+	Or.w	D7,D1        
+	Move.w	D1,(A1,D5.l)
+.FinOpt	Adda.w	#SizeLine,A1
+	Adda.w	#SizeLine,A2
+	Dbf	D2,.LoopY
+	RTS
+
+
+.Optz	Movem.w	(A0)+,D1/D6-D7  	   3 .L = 6 .W
+	Move.w	D1,(A1) 	     Plan 0
+	Move.w	D6,SizePlan(A1)        Plan 1
+	Move.w	D7,2*SizePlan(A1)      Plan 2
+	Movem.w	(A0)+,D1/D6-D7
+	Move.w	D1,(A1,D3.l)         Plan 3
+	Move.w	D6,(A1,D4.l)         Plan 4
+	Move.w	D7,(A1,D5.l)         Plan 5
+	Bra.s	.FinOpt
+
+
+**************	Tracer juste un bloc, une grosse case (16*16)
+*
+*	A2: Adresse premier plan
+*	D3: X    (0-n)
+*	D4: Y    (0-n)
+*	D5: Bloc (0-n)
+*
+TraceBloc
+	Movem.l	D3-D7/A0-A4,-(A7)
+	Lea	BlocDat,A0
+	Mulu.w	#2*16*7,D5
+	Lea	(A0,D5.l),A4	Source
+	Ext.l	D3
+	Mulu.w	#SizeLine*8,D4	Y*N+X
+	Add.l	D3,D4
+	Adda.l	RenderBase,A2
+	Adda.l	D4,A2		A2:Cible écran
+
+	Move.l	#SizePlan,D6
+	Move.l	D6,D4
+	Add.l	D4,D4
+	Add.l	D6,D4	3*SizePlan
+	Move.l	D4,D5
+	Add.l	D6,D5	4*SizePlan
+	Add.l	D5,D6	5*SizePlan
+
+	Move.l	#SizeLine,D7
+	Moveq	#15,D3
+.BoucY	Move.w	2(A4),(A2)	Il faut sauter le masque
+	Move.w	4(A4),SizePlan(A2)
+	Move.w	6(A4),2*SizePlan(A2)
+	Move.w	8(A4),(A2,D4.l)
+	Move.w	10(A4),(A2,D5.l)
+	Move.w	12(A4),(A2,D6.l)
+	Adda.w	#14,A4
+	Adda.l	D7,A2
+	Dbf	D3,.BoucY
+	Movem.l	(A7)+,D3-D7/A0-A4
+	RTS
+
+*********************************	Clear Bitplans
+ClearBpls
+	Move.l	Planar,A0
+	Move.l	#SizePlan*NbPlans/8-1,D0
+.Boucle	Clr.l	(A0)+
+	Clr.l	(A0)+
+	Dbf	D0,.Boucle
+	RTS
+
+
+****************************	DOUBLE BUFFER
+
+DoubleBuffer
+*
+* ->  D3: SizePlan
+*
+	VblLook
+	Cmp.w	#40,D2
+	Blt.s	.Att
+	Cmp.w	#305,D2	
+	Ble.s	.Ok
+.Att	VblWait	#40
+.Ok	Move.w	NumPlanar,D2
+	Moveq.w	#1,D0
+	Sub.w	D2,D0
+	Move.w	D0,NumPlanar	
+*	Lea	Planar1,A0
+	Move.l	(A0,D0.w*4),Planar
+	Move.l	(A0,D2.w*4),A1
+	Move.l	CopAdrPl,A0
+	CopPlan	A1,D3,#8
+	RTS	
+
+******************
+
+
+
+	***************** Copier une case de 32x16 pixels SANS MASQUE
+	*	        sur la barre des joueurs (Hires)
+	*
+	* D3: X (en octets)
+	* D4: Y (en pixels)
+	* D5: N°Bloc dans banque "grosse"
+	*
+Bloc32x16cop
+	Cmp.w	#NombreBonusHires*2+NombreMecsHires,D5
+	Bge.s	.Err	
+	Tst.w	D5
+	Blt.s	.Err
+	Movem.l	D2/D4/D6-D7/A0-A1,-(A7)
+	*Lea	Barre,A0		Barre 640*18*6
+	Movea.l	BarrePtr,A0
+	Mulu.w	#SizeLine*2,D4
+	Add.w	D3,D4
+	Lea	(A0,D4.w),A0	Adresse cible	
+	Lea	BigBlocDat,A1
+	Mulu.w	#4*16*6,D5	384 octets/image
+	Lea	(A1,D5.l),A1	Adresse source
+	Move.l	#SizePlanBarre,D7
+	Move.l	D7,D6
+	Lsl.l	#2,D6	*4
+	Add.l	D6,D7	*5
+	Moveq	#15,D2
+.Loop	Move.l	(A1)+,(A0)		
+	Move.l	(A1)+,SizePlanBarre(A0)	
+	Move.l	(A1)+,SizePlanBarre*2(A0)	
+	Move.l	(A1)+,SizePlanBarre*3(A0)	
+	Move.l	(A1)+,(A0,D6.l)	
+	Move.l	(A1)+,(A0,D7.l)	
+	Adda.w	#SizeLine*2,A0
+	Dbf	D2,.Loop		
+	Movem.l	(A7)+,D2/D4/D6-D7/A0-A1
+.Err	RTS
+
+	***************** Copier un Digit de 16x11 pixels SANS MASQUE
+	*	        sur la barre des joueurs (Hires)
+	*
+	* D4: X,Y (en octets)	COPIE SUR OCTET ENTIER EN X
+	* D0: Nombre à copier
+	* 
+	*
+DigitCopy8
+	Move.l	D0,-(A7)
+	Move.w	PosDigitJ,D3	en pixels !
+	Add.w	D3,D4
+	Move.w	D4,D3
+	Lsr.w	#3,D4
+	And.b	#%111,D3		pour savoir si décalage 4 bits
+	Bne.s	.No8But4
+
+	Movea.l	BarrePtr,A0
+	Lea	(A0,D4.w),A0	Adresse cible dans la barre	
+	Mulu.w	#2*11*6,D0	Taille d'un nombre
+	Lea	TimerDat1,A1	Horloge 6 plans  16x11   17 vues
+	Lea	(A1,D0.w),A1	Adresse source dans la banque
+	Moveq	#12,D3
+	Moveq	#10,D4
+.Loop	Move.w	(A1)+,(A0)
+	Move.w	(A1)+,SizePlanBarre(A0)	
+	Move.w	(A1)+,SizePlanBarre*2(A0)	
+	Move.w	(A1)+,SizePlanBarre*3(A0)	
+	Move.w	(A1)+,SizePlanBarre*4(A0)	
+	Move.w	(A1)+,SizePlanBarre*5(A0)	
+	Adda.w	#SizeLine*2,A0
+	Dbf	D4,.Loop		
+	Move.l	(A7)+,D0
+	RTS
+.No8But4	Move.l	(A7)+,D0		NE RIEN INSERER ICI OU
+	Lsl.w	#3,D4		ALORS REMETTRE LE BRA.S
+	Sub.w	PosDigitJ,D4	bordélique mais bon...
+	*Bra	DigitCopy4
+	***************** Copier un Digit de 16x11 pixels SANS MASQUE
+	*	        sur la barre des joueurs (Hires)
+	*
+	* D4: X,Y (en bits)	DECALAGE A DROITE DE 4 BITS
+	* D0: Nombre à copier
+	* 
+	*
+DigitCopy4
+	Move.l	D0,-(A7)
+	Add.w	PosDigitJ,D4
+	Lsr.w	#3,D4
+	Movea.l	BarrePtr,A0	Barre 640*18*6
+	Lea	(A0,D4.w),A0	Adresse cible dans la barre	
+	Mulu.w	#2*11*6,D0	Taille d'un nombre
+	Lea	TimerDat1,A1	Horloge 6 plans  16x11   17 vues
+	Lea	(A1,D0.w),A1	Adresse source dans la banque
+	Moveq	#12,D3
+	Moveq	#10,D4
+.Loop	Move.l	(A0),D5	$ABCDEFGH	On veut recouvrir BCDE
+	Ror.l	D3,D5	$FGHABCDE
+	Move.w	(A1)+,D5	$FGHAabcd
+	Rol.l	D3,D5	$AabcdFGH
+	Move.l	D5,(A0)
+	Move.l	SizePlanBarre(A0),D5	
+	Ror.l	D3,D5	
+	Move.w	(A1)+,D5
+	Rol.l	D3,D5
+	Move.l	D5,SizePlanBarre(A0)
+	Move.l	SizePlanBarre*2(A0),D5	
+	Ror.l	D3,D5	
+	Move.w	(A1)+,D5
+	Rol.l	D3,D5
+	Move.l	D5,SizePlanBarre*2(A0)
+	Move.l	SizePlanBarre*3(A0),D5	
+	Ror.l	D3,D5	
+	Move.w	(A1)+,D5
+	Rol.l	D3,D5
+	Move.l	D5,SizePlanBarre*3(A0)
+	Move.l	SizePlanBarre*4(A0),D5	
+	Ror.l	D3,D5	
+	Move.w	(A1)+,D5
+	Rol.l	D3,D5
+	Move.l	D5,SizePlanBarre*4(A0)
+	Move.l	SizePlanBarre*5(A0),D5	
+	Ror.l	D3,D5	
+	Move.w	(A1)+,D5
+	Rol.l	D3,D5
+	Move.l	D5,SizePlanBarre*5(A0)
+	Adda.w	#SizeLine*2,A0
+	Dbf	D4,.Loop		
+	Move.l	(A7)+,D0
+	RTS
+
+
+**************** Routine pour tracer un bloc avec un autre bloc derrière 
+*
+*	A2: Adresse premier plan (Font)
+*	D3: X    (0-n)
+*	D4: Y    (0-n)
+*	D5: Bloc (0-n)
+*	D6: Bloc Font (0-n)
+*
+TraceBlocWithBloc
+	Movem.l	D1-D7/A0-A5,-(A7)
+	Lea	BlocDat,A0
+	Mulu.w	#2*16*7,D5
+	Mulu.w	#2*16*7,D6
+	Lea	(A0,D5.l),A4	Bloc Source
+	Lea	(A0,D6.l),A5	Bloc de derrière
+	Ext.l	D3
+	Mulu.w	#SizeLine*8,D4	Y*N+X
+	Add.l	D3,D4
+	Adda.l	RenderBase,A2
+	Adda.l	D4,A2		A2:Cible écran
+
+	Move.l	#SizePlan,D6
+	Move.l	D6,D4
+	Add.l	D4,D4
+	Add.l	D6,D4	3*SizePlan
+	Move.l	D4,D5
+	Add.l	D6,D5	4*SizePlan
+	Add.l	D5,D6	5*SizePlan
+
+	Move.l	#SizeLine,D7
+	Moveq	#15,D3
+.BoucY	Move.w	(A4)+,D2	Masque bloc devant
+	Beq.s	.Optz1		
+
+	Move.w	2(A5),D1
+	And.w	D2,D1
+	Or.w	(A4)+,D1
+	Move.w	D1,(A2)
+
+	Move.w	4(A5),D1
+	And.w	D2,D1
+	Or.w	(A4)+,D1
+	Move.w	D1,SizePlan(A2)
+	
+	Move.w	6(A5),D1
+	And.w	D2,D1
+	Or.w	(A4)+,D1
+	Move.w	D1,2*SizePlan(A2)
+
+	Move.w	8(A5),D1
+	And.w	D2,D1
+	Or.w	(A4)+,D1
+	Move.w	D1,(A2,D4.l)
+	
+	Move.w	10(A5),D1
+	And.w	D2,D1
+	Or.w	(A4)+,D1
+	Move.w	D1,(A2,D5.l)
+
+	Move.w	12(A5),D1
+	And.w	D2,D1
+	Or.w	(A4)+,D1
+	Move.w	D1,(A2,D6.l)
+
+	Adda.w	#14,A5
+	Adda.l	D7,A2
+	Dbf	D3,.BoucY
+.EndB	Movem.l	(A7)+,D1-D7/A0-A5
+	RTS
+
+
+
+	***** Le Masque=0, donc on ne voit pas à travers le bloc devant
+	*
+.Optz1	Move.w	(A4)+,(A2)	Il faut sauter le masque
+	Move.w	(A4)+,SizePlan(A2)
+	Move.w	(A4)+,2*SizePlan(A2)
+	Move.w	(A4)+,(A2,D4.l)
+	Move.w	(A4)+,(A2,D5.l)
+	Move.w	(A4)+,(A2,D6.l)
+	Adda.w	#14,A5	Bloc derrière: on saute la ligne
+	Adda.l	D7,A2
+	Dbf	D3,.BoucY
+	Bra.s	.EndB
+
+
+*************************************************************
+*	Routines additionnelles			*
+*			Comme les Bobs, etc...	*
+*						*
+* (A récupérer dans de futures productions ;-) )		*
+*************************************************************
+
+************  Faire un CLS : Effacement de tous les plans
+*	    Précision: 64 pixels (8 octets)
+*
+* A0: Adresse plan
+* D0: Taille plan
+* D1: Nombre de plans
+*
+CLS	Subq.w	#1,D1
+	Lsr.w	#3,D0
+	Subq.w	#1,D0
+	Move.w	D0,D2
+.Loop	Clr.l	(A0)+	
+	Clr.l	(A0)+
+	Dbf	D2,.Loop
+	Move.w	D0,D2
+	Dbf	D1,.Loop
+	RTS
+
+
+**************************    Afficher un bob en récupérant auparavant
+*			l'image sur laquelle il va être posé.
+*			Avec un masque, forcément !
+*			(Nombre de plans=5 pour l'instant (Menus))
+*
+* IL MANQUE LES DECALAGES : VOIR "NOTESBOB.TXT" pour cela
+*
+*
+* D3: Offset sur l'écran de l'affichage du Bob
+* D4: N° du bob de la banque à afficher
+* (A0: Adresse de sauvegarde du background)
+* A1: Adresse de la banque de bobs (avec Index !)
+* A2: Adresse du premier plan
+* 	
+*
+DisplayBob8
+	Adda.l	(A1,D4.w*4),A1	On ajoute l'index à l'adresse	
+	Movem.w	(A1)+,D0-D2	W,H,P
+	Movea.l	BobBackPtr,A0	Adresse sauvegarde bordel
+	Lea	(A2,D3.l),A2
+	Subq.w	#1,D0	W
+	Subq.w	#1,D1	H
+	Subq.w	#1,D2	Plans
+	Movea.l	#SizePlanMenu,A6
+	Move.w	D0,(A0)+		W
+	Move.w	D1,(A0)+		H
+	Move.w	D2,(A0)+		P
+	Move.l	A2,(A0)+		Planar
+	******** BOUCLES
+.LoopY	Move.w	D0,D7		Largeur
+	Movea.l	A2,A4
+.LoopX	Move.w	(A1)+,D4		Masque
+*	Move.w	D4,D5
+*	Not.w	D5		Masque inversé pour la VERSION II
+	Move.w	D4,(A0)+
+	Adda.w	#7*2,A1		Optimization
+	Cmp.w	#-1,D4
+	Beq.s	.NopT		On trace pas si Masque=-1
+	Suba.w	#7*2,A1
+	Move.w	D2,D6		Nombre de plans
+	Movea.l	A4,A3
+.LoopPl	Move.w	(A3),D3		Lecture écran	 CHIP
+	Move.w	D3,(A0)+		Sauvegarde du font VERSION I
+	And.w	D4,D3		Masque(Font)
+	*Move.w	D3,(A0)+		Sauvegarde du font VERSION II
+	Or.w	(A1)+,D3		Font + Bob
+	Move.w	D3,(A3)		Trace Bob sur écran  CHIP	
+	Adda.l	A6,A3
+	Dbf	D6,.LoopPl
+
+.NopT	Adda.w	#2,A4	Nouvelle position en X sur l'écran 
+	Dbf	D7,.LoopX
+	Adda.w	#SizeLine,A2
+	Dbf	D1,.LoopY	
+
+	RTS
+
+*
+* Pour chaque ligne, j'ai : 12*(Masque,Plan0-Plan5) 
+*
+*
+*
+*
+
+
+*
+* BUT: Se débrouiller pour ne sauver que les parties qui vont être
+* recouvertes par l'image du bob et aussi ne restaurer que celles-là
+* Comment faire ? au moment de la restauration cela oblige sûrement
+* à relire le masque, mais au moment où l'on affiche le bob cela peut
+* être fait en même temps que l'on fait l'affichage.
+*
+*
+*
+*
+*
+*
+*
+
+
+
+
+*************************	Restaurer le font derrière l'ancien BOB!
+*
+*	AUCUN PARAMETRE !!! ;-)
+*
+* La Version actuellement en service dans cette routine ne restaure
+* sur l'écran que les PIXELS qui ont été écris par le Bob. Cela
+* fait perdre pas mal de vitesse, mais simplifie énormément la gestion
+* des menus. Encore une chose que l'on ne peut faire en AMOS ! ;-)
+*
+*
+DelBob8
+	Movem.l	D0-D7/A0-A6,-(A7)
+	Movea.l	BobBackPtr,A0	Adresse sauvegarde bordel
+	Movem.w	(A0)+,D0-D2
+	Movea.l	(A0)+,A2
+	Movea.l	#SizePlanMenu,A6
+	
+	******** BOUCLES
+.LoopY	Move.w	D0,D7		Largeur
+	Movea.l	A2,A4
+.LoopX	Move.w	(A0)+,D4		Masque
+	Cmp.w	#-1,D4
+	Beq.s	.NopT		On trace pas si Masque=-1
+	Move.w	D2,D6		Nombre de plans
+	Movea.l	A4,A3
+.LoopPl	* Version longue: on ne restaure que les pixels affectés!
+	Move.w	(A3),D3		écran
+	And.w	D4,D3		écran masqué
+	Move.w	(A0)+,D5		+Mem
+	Not.w	D4
+	And.w	D4,D5		Mem Masqué
+	Not.w	D4
+	Or.w	D5,D3
+	Move.w	D3,(A3)		affichage
+	* Version courte: Move.w (A0)+,(A3)
+	Adda.l	A6,A3
+	Dbf	D6,.LoopPl
+.NopT	Adda.w	#2,A4	Nouvelle position en X sur l'écran 
+	Dbf	D7,.LoopX
+	Adda.w	#SizeLine,A2
+	Dbf	D1,.LoopY	
+	Movem.l	(A7)+,D0-D7/A0-A6
+	RTS
+
+***********************************
+* D0: Position X de début de centrage
+* A0: Fonte 
+* A1: Phrase
+* D3: Largeur écran
+*
+* Retour: D0->D0+X
+CenterX
+	Movem.l	D1-D7/A0-A6,-(A7)
+	Ext.l	D0
+	Move.l	D0,-(A7)
+	Move.l	D3,-(A7)
+	Bsr	SearchLen 	A1 -> D6
+	Move.l	(A7)+,D3
+	Subq.w	#1,D6
+	Clr.l	D0
+	Clr.l	D5
+.Loop	Move.b	(A1)+,D5		Lettre actuelle (0-255)
+	Beq.s	.EndG		Au casou
+	Movea.l	A0,A4
+	Adda.l	(A0,D5.w*4),A4	Index .L 
+	Add.w	(A4),D0	X=X+Largeur Lettre
+	Dbf	D6,.Loop
+.EndG	
+	Ext.l	D3
+	Sub.l	D0,D3		(LargEcran-LargTexte)/2+X
+	Divs.l	#2,D3
+	Add.l	(A7)+,D3
+	Move.l	D3,D0
+
+	Movem.l	(A7)+,D1-D7/A0-A6
+	RTS
+
+
+*********************  Afficher une phrase (Positions GRAPHIQUES)
+*		
+* A0: Adresse fonte (Indexs, Données)
+* A1: Adresse de la phrase
+* A2: Adresse du plan
+* D0: Position X (pixels)
+* D1: Position Y (pixels)
+* D2: Couleur (Masque d'affichage sur les plans)
+* D7: Nombre de plans à affecter
+* VarSizePlan .L
+* VarSizeLine .L
+*
+GPrint	Bsr	SearchLen
+	Subq.w	#1,D6
+	Clr.l	D5
+.Loop	Move.b	(A1)+,D5		Lettre actuelle (0-255)
+	Beq.s	.EndG		Au casou
+	Movea.l	A0,A4
+	Adda.l	(A0,D5.w*4),A4	Index .L 
+	Movem.w	D0-D2/D7,-(A7)
+	Bsr	IPrintOne
+	Movem.w	(A7)+,D0-D2/D7
+	Add.w	(A4),D0	X=X+Largeur Lettre
+	Dbf	D6,.Loop
+.EndG	RTS
+
+
+*********** Chercher la longuueur d'une phrase finie par un 0
+*
+*	A1: Adresse phrase
+*	-> D6: Longueur
+*	
+SearchLen
+	Movea.l	A1,A3
+	Move.w	#99,D6	Longueur maxi -1 pour le print (antibug)
+	Move.w	D6,D3
+.Long	Tst.b	(A3)+
+	Dbeq	D3,.Long		Si 0 on arrête la boucle
+	Sub.w	D3,D6	D6: Longueur de la phrase en lettres (octets)	
+	RTS
+
+*********************  Afficher UNE lettre en pixels
+*		Cette lettre fait au MAXIMUM 24 pixels de largeur
+*
+*
+* D0: X en pixels
+* D1: Y en pixels
+* D2: Masque sur les plans   	
+* D7: Nombre de plans à affecter
+* A2: Premier Plan
+* A4: Adresse de la structure lettre 
+*
+* Structure : 	Largeur en PIXELS .W
+*		Hauteur en pixels .W
+*		Boucle en hauteur de > 1 Long-Mot <
+*
+IPrintOne
+	Move.w	D0,D3
+	And.w	#%111,D3	D3: X Mod 8 : Nombre de bits à décaler
+	Lsr.w	#3,D0	D0: X/8 : En octets
+	Ext.l	D1
+	Mulu.l	VarSizeLine,D1
+	Add.w	D0,D1	D1: Offset sur l'écran
+	Subq.w	#1,D7	Nb plans à traçer
+	Lea	(A2,D1.w),A3
+	Suba.l	VarSizePlan,A3
+.BouclePl
+	Adda.l	VarSizePlan,A3
+	Move.w	2(A4),D4	Hauteur
+	Subq.w	#1,D4
+	Blt.s	.EndPl	Hauteur=0: On se barre
+	Lea	4(A4),A5
+	Movea.l	A3,A6
+	Lsr.b	#1,D2	Masque
+	Bcc	.BoucleY0	Pour un plan à 0
+
+	*** Boucle pour un plan à 1
+.BoucleY1	Move.l	(A5)+,D0	Données graphiques "collées à gauche" %11000...
+	Lsr.l	D3,D0	Données décalées %00011000...
+	Or.l	D0,(A6)
+	Adda.l	VarSizeLine,A6
+	Dbf	D4,.BoucleY1
+	Dbf	D7,.BouclePl
+.EndPl	RTS
+
+	*** Boucle pour un plan à 0
+.BoucleY0	Move.l	(A5)+,D0	Masque	
+	Lsr.l	D3,D0	Données décalées %00011000...
+	Not.l	D0	D0: Masque : %11100111...
+	And.l	D0,(A6)	Font masqué
+	Adda.l	VarSizeLine,A6
+	Dbf	D4,.BoucleY0
+	Dbf	D7,.BouclePl
+	RTS
+
+
+
+***************************	Fonction "BAR"
+*
+*
+* D0: X1 (En pixels)
+* D1: Y1
+* D2: X2
+* D3: Y2
+* D6: Masque des plans (Couleur)
+* D7: Nombre de plans affectés
+* A2: Adresse du premier plan
+*
+*
+BAR	And.w	#$FF,D6	Max 256 couleurs
+	Cmp.w	#8,D7
+	Ble.s	.Ok0	Max 8 plans
+	Move.w	#8,D7
+.Ok0	Cmp.w	D0,D2	Vérifs de sens
+	Bge.s	.Ok1
+	Exg	D0,D2
+.Ok1	Cmp.w	D1,D3
+	Bge.s	.Ok2
+	Exg	D1,D3
+.Ok2	Sub.w	D1,D3
+
+	*Move.l	#SizePlan,VarSizePlan
+	*Move.l	#SizeLine,VarSizeLine
+
+	Ext.l	D1
+	Mulu.l	VarSizeLine,D1
+
+	*Mulu.w	#SizeLine,D1
+	Addq.w	#1,D3
+	Move.w	D0,D4
+	Lsr.w	#3,D4	
+	And.w	#%11111100,D4	D4: Octet (X1) LONG WORD ALIGNED
+	And.w	#%11111,D0	D0: X1 Modulo 32
+	Add.w	D4,D1		D1: Offset de départ
+	Lea	(A2,D1.w),A2	
+
+	Move.w	D2,D5
+	Lsr.w	#3,D5
+	And.w	#%11111100,D5	D5: Octet (X2) LONG WORD ALIGNED
+	And.w	#%11111,D2	D2: X2 Modulo 32	
+
+	Move.w	D5,D1
+	Sub.w	D4,D1	D0: X2-X1
+	Lsr.w	#2,D1	Nombre de Long Word de différence
+	
+	* D5: Nombre de longs mots ENTRE le départ et l'arrivée
+	
+	Moveq	#-1,D4	%111111...
+	Move.l	D4,D5	%111111...
+	Movea.l	D4,A4	Pour remplir ENTRE les 2 mots
+	Lsr.l	D0,D4	%001111...	First Word : Décalage 0-31
+	Addq.w	#1,D2	Correction de l'erreur de 1 bit
+	Lsr.l	D2,D5	%0000111111111111 Si D2 = 3ème bit (+1->4)
+	Not.l	D5	%1111000000000000
+
+	* On peut utiliser: D0,D2
+	* D1: Nombre de long mots ENTRE le mot de départ et celui de fin
+
+	Subq.w	#1,D3	Hauteur-1
+	Subq.w	#1,D7	Nombre de plans-1
+
+	Subq.w	#1,D1
+	Beq	.Loop0Pl		0 mot au milieu des 2 des bouts
+	Bgt.s	.Loop3Pl0		à partir de 3 mots
+
+	****** Cas avec un seul mot	
+	*
+	And.l	D5,D4
+.Loop1Pl	Movea.l	A2,A3
+	Move.w	D3,D0
+	Lsr.b	#1,D6
+	Bcc	.Loop1Y0
+.Loop1Y1	Or.l	D4,(A3)		Plan à 1
+	*Adda.l	#SizeLine,A3
+	Adda.l	VarSizeLine,A3
+	Dbf	D0,.Loop1Y1
+	Adda.l	VarSizePlan,A2
+	Dbf	D7,.Loop1Pl
+	RTS	
+.Loop1Y0	Not.l	D4
+.Loop1Y02	And.l	D4,(A3)		Plan à 0
+	*Adda.l	#SizeLine,A3
+	Adda.l	VarSizeLine,A3
+	Dbf	D0,.Loop1Y02
+	Not.l	D4
+	Adda.l	VarSizePlan,A2
+	Dbf	D7,.Loop1Pl
+	RTS
+
+
+	****** Cas normal : 3-N Longs Mots
+	*
+.Loop3Pl0	Subq.w	#1,D1	-1 Pour les Dbf
+.Loop3Pl	Movea.l	A2,A3
+	Move.w	D3,D0
+	Lsr.b	#1,D6
+	Bcc	.Loop3Y0
+.Loop3Y1	Movea.l	A3,A5
+	Or.l	D4,(A5)+		Plan à 1
+	Move.w	D1,D2
+.Loop3X1	Move.l	A4,(A5)+
+	Dbf	D2,.Loop3X1
+	Or.l	D5,(A5)
+	Adda.l	#SizeLine,A3
+	Dbf	D0,.Loop3Y1
+	Adda.l	#SizePlanMenu,A2
+	Dbf	D7,.Loop3Pl
+	RTS	
+.Loop3Y0	Not.l	D4
+	Not.l	D5
+.Loop3Y02	Movea.l	A3,A5
+	And.l	D4,(A5)+		Plan à 0
+	Move.w	D1,D2
+.Loop3X2	Clr.l	(A5)+
+	Dbf	D2,.Loop3X2
+	And.l	D5,(A5)
+	Adda.l	#SizeLine,A3
+	Dbf	D0,.Loop3Y02
+	Not.l	D4
+	Not.l	D5
+	Adda.l	#SizePlanMenu,A2
+	Dbf	D7,.Loop3Pl
+	RTS
+
+
+	****** Cas avec 2 mots
+	*
+.Loop0Pl	Movea.l	A2,A3
+	Move.w	D3,D0
+	Lsr.b	#1,D6
+	Bcc	.Loop0Y0
+.Loop0Y1	Or.l	D4,(A3)		Plan à 1
+	Or.l	D5,4(A3)
+	Adda.l	#SizeLine,A3
+	Dbf	D0,.Loop0Y1
+	Adda.l	#SizePlanMenu,A2
+	Dbf	D7,.Loop0Pl
+	RTS	
+.Loop0Y0	Not.l	D4
+	Not.l	D5
+.Loop0Y02	And.l	D4,(A3)		Plan à 0
+	And.l	D5,4(A3)
+	Adda.l	#SizeLine,A3
+	Dbf	D0,.Loop0Y02
+	Not.l	D4
+	Not.l	D5
+	Adda.l	#SizePlanMenu,A2
+	Dbf	D7,.Loop0Pl
+	RTS
+
+
+********************** Faire un BOX mais réglable en LARGEUR
+*		l'épaississement se fait à l'intérieur.
+*		Pour avoir épaisseur=1, faire D4=0 !
+*
+* D0: X1 (En pixels)
+* D1: Y1
+* D2: X2
+* D3: Y2
+* D4: Nombre de PIXELS de tour-1 (0->1 pixel)
+* D6: Masque des plans (Couleur)
+* D7: Nombre de plans affectés
+* A2: Adresse du premier plan
+*
+*
+BAR_OUTLINE
+	Movem.w	D0-D3,BarOutWork
+
+	* BAR 1 : X1,Y1 to X2,Y1+5
+	Move.w	D1,D3
+	Add.w	D4,D3
+	Movem.l	D4/D6-D7/A2,-(A7)
+	Bsr	BAR
+	Movem.l	(A7)+,D4/D6-D7/A2
+
+	* BAR 2 : X1,Y2-5 to X2,Y2
+	Move.w	BarOutWork,D0	X1
+	Move.w	BarOutWork+3*2,D3	Y2
+	Move.w	D3,D1
+	Sub.w	D4,D1		Y2-5
+	Move.w	BarOutWork+2*2,D2
+	Movem.l	D4/D6-D7/A2,-(A7)
+	Bsr	BAR
+	Movem.l	(A7)+,D4/D6-D7/A2
+
+	* BAR 3 : X1,Y1+5 to X1+5,Y2-5
+	Movem.w	BarOutWork,D0-D3
+	Add.w	D4,D1
+	Move.w	D0,D2
+	Add.w	D4,D2
+	Sub.w	D4,D3
+	Movem.l	D4/D6-D7/A2,-(A7)
+	Bsr	BAR
+	Movem.l	(A7)+,D4/D6-D7/A2
+
+	* BAR 4 : X2-5,Y1+5 to X2,Y2-5
+	Movem.w	BarOutWork,D0-D3
+	Add.w	D4,D1
+	Move.w	D2,D0
+	Sub.w	D4,D0
+	Sub.w	D4,D3
+	Movem.l	D4/D6-D7/A2,-(A7)
+	Bsr	BAR
+	Movem.l	(A7)+,D4/D6-D7/A2
+
+	RTS
+
+
+************* Copier la barre actuelle dans la barre visible
+*
+*
+*
+*
+CopyBarre
+	Movem.l	D0-D4/A0-A1,-(A7)
+	Movea.l	BarrePtrW,A0
+	Lea	BarBackup,A1
+	Move.l	#(SizePlanBarre*NbPlansBarre)/64-1,D0
+.Cop	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+	16*4 octets
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Dbf	D0,.Cop
+	Movem.l	(A7)+,D0-D4/A0-A1
+	RTS
+
+
+ClsBAR
+	Movem.l	D0-D4/A0-A1,-(A7)
+	Move.l	BarrePtr,A1
+	Move.l	#(SizePlanBarre*NbPlansBarre)/64-1,D0
+.Cop	Clr.l	(A1)+
+	Clr.l	(A1)+
+	Clr.l	(A1)+	16*4 octets
+	Clr.l	(A1)+
+	Clr.l	(A1)+
+	Clr.l	(A1)+
+	Clr.l	(A1)+
+	Clr.l	(A1)+
+	Clr.l	(A1)+
+	Clr.l	(A1)+
+	Clr.l	(A1)+
+	Clr.l	(A1)+
+	Clr.l	(A1)+
+	Clr.l	(A1)+
+	Clr.l	(A1)+
+	Clr.l	(A1)+
+	Dbf	D0,.Cop
+	Movem.l	(A7)+,D0-D4/A0-A1
+	RTS
+
+*************	Sauvegarder la barre des joueurs
+*
+*
+BackupBar
+	Lea	BarBackup,A0
+	*Lea	Barre,A1	
+	Movea.l	BarrePtrW,A1
+	Move.w	#17,D1
+.LoopY	Moveq	#5,D0
+.LoopPl	Move.l	(A1)+,(A0)+	4.5 Move.l en largeur
+	Move.l	(A1)+,(A0)+	20 Move.l pour tout l'écran
+	Move.l	(A1)+,(A0)+
+	Move.l	(A1)+,(A0)+
+*	Move.w	(A1)+,(A0)+
+*	Adda.w	#SizePlanBarre-18,A1
+	Move.l	(A1)+,(A0)+
+	Move.l	(A1)+,(A0)+
+	Move.l	(A1)+,(A0)+
+	Move.l	(A1)+,(A0)+
+	Move.l	(A1)+,(A0)+
+	Move.l	(A1)+,(A0)+
+	Move.l	(A1)+,(A0)+
+	Move.l	(A1)+,(A0)+
+	Move.l	(A1)+,(A0)+
+	Move.l	(A1)+,(A0)+
+	Move.l	(A1)+,(A0)+
+	Move.l	(A1)+,(A0)+
+	Move.l	(A1)+,(A0)+
+	Move.l	(A1)+,(A0)+
+	Move.l	(A1)+,(A0)+
+	Move.l	(A1)+,(A0)+
+	Adda.w	#SizePlanBarre-2*sizeline,A1
+	Dbf	D0,.LoopPl
+	Adda.w	#SizeLine*2-6*SizePlanBarre,A1	
+	Dbf	D1,.LoopY
+	RTS
+
+
+*************	Restaurer la barre des joueurs
+*
+*
+RestoreBar
+*	RTS
+	Lea	BarBackup,A0
+	*Lea	Barre,A1	
+	Movea.l	BarrePtrW,A1
+	Move.w	#17,D1
+.LoopY	Moveq	#5,D0
+.LoopPl	Move.l	(A0)+,(A1)+	4.5 Move.l en largeur
+	Move.l	(A0)+,(A1)+	20 Move.l pour tout l'écran
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+*	Move.w	(A0)+,(A1)+
+*	Adda.w	#SizePlanBarre-18,A1
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Move.l	(A0)+,(A1)+
+	Adda.w	#SizePlanBarre-2*sizeline,A1
+	Dbf	D0,.LoopPl
+	Adda.w	#SizeLine*2-6*SizePlanBarre,A1	
+	Dbf	D1,.LoopY
+	RTS
+
+
+************* Afficher toutes les jauges de victoire possibles
+* 	    et inimaginables :-)
+*
+AfficheAllVictoires
+	**** TEAMS
+	Moveq	#0,D3			Victoires équipes
+	Bsr	AfficheVictoiresTeams
+	Moveq	#1,D3	
+	Bsr	AfficheVictoiresTeams
+	**** INDIVIDUAL
+	Move.l	LegoPtr,A0
+	Clr.l	D3
+.LoopJ	Bsr	AfficheVictoires
+	Adda.w	#Leg_SizeOf,A0
+	Addq.w	#1,D3
+	Cmp.w	#NbJoueurs,D3
+	Ble.s	.LoopJ
+
+	RTS
+	
+	
+*************	Afficher le nombre de victoires d'un mec
+*
+* D3: N° du joueur
+* A0: structure joueur
+*
+* Travail: D4/A1-A2
+*
+AfficheVictoires
+	Tst.w	GameMode		Seulement en mode "5 Win Match"
+	Beq	.NoGM	
+	Tst.w	PlayerMode	Seulement en mode "Individuel"
+	Bne	.NoGM	
+	
+	Lea	JaugDat,A1	18*6 = 108 octets
+	Clr.w	D4
+	Move.w	(Victoires,D3.w*2),D4
+	Mulu.w	#18*6,D4
+	Lea	(A1,D4.w),A1	Pointeur Jauge actuelle
+	
+	Movea.l	BarrePtr,A2
+*	Move.w	Leg_BarreY(A0),D4	
+*	Mulu.w	#SizeLine*2,D4
+	Clr.w	D4
+	Add.w	Leg_BarreX(A0),D4	D4: Offset sur l'écran
+	Lea	-1(A2,D4.w),A2	Pointeur sur l'écran
+
+	Moveq	#6-1,D4
+.LoopPl	Move.b	6(A1),SizeLine*2(A2)
+	Move.b	6*2(A1),2*SizeLine*2(A2)
+	Move.b	6*3(A1),3*SizeLine*2(A2)
+	Move.b	6*4(A1),4*SizeLine*2(A2)
+	Move.b	6*5(A1),5*SizeLine*2(A2)
+	Move.b	6*6(A1),6*SizeLine*2(A2)
+	Move.b	6*7(A1),7*SizeLine*2(A2)
+	Move.b	6*8(A1),8*SizeLine*2(A2)
+	Move.b	6*9(A1),9*SizeLine*2(A2)
+	Move.b	6*10(A1),10*SizeLine*2(A2)
+	Move.b	6*11(A1),11*SizeLine*2(A2)
+	Move.b	6*12(A1),12*SizeLine*2(A2)
+	Move.b	6*13(A1),13*SizeLine*2(A2)
+	Move.b	6*14(A1),14*SizeLine*2(A2)
+	Move.b	6*15(A1),15*SizeLine*2(A2)
+	Move.b	6*16(A1),16*SizeLine*2(A2)
+	Move.b	6*17(A1),17*SizeLine*2(A2)
+	Move.b	(A1)+,(A2)
+	Adda.w	#SizePlanBarre,A2
+	Dbf	D4,.LoopPl
+	
+.NoGM	RTS
+	
+
+
+*************	afficher le nombre de victoires d'une équipe
+*
+* D3: N° de l'équipe (0/1)
+*
+* Travail: D4/A0-A2
+*
+AfficheVictoiresTeams
+	Tst.w	GameMode		Seulement en mode "5 Win Match"
+	Beq	.NoGM	
+	Tst.w	PlayerMode
+	Beq	.NoGM		Seulement en mode "Teams"
+	
+	Lea	JaugDatT,A1	18*2*6 = 216 octets
+	Clr.w	D4
+	Move.w	(VictoiresEq,D3.w*2),D4
+	Mulu.w	#18*2*6,D4
+	Lea	(A1,D4.w),A1	Pointeur Jauge actuelle
+	
+	Tst.w	ModeAct
+	Beq.s	.Ok4
+	Addq.w	#2,D3
+.Ok4
+	Movea.l	BarrePtr,A2
+	Lea	TeamVictPos,A0
+	Move.w	(A0,D3.w*2),D4	D4: Offset sur l'écran
+	Lea	-1(A2,D4.w),A2	Pointeur sur l'écran
+
+	Moveq	#6-1,D4
+.LoopPl	Move.w	6*2(A1),SizeLine*2(A2)
+	Move.w	6*2*2(A1),2*SizeLine*2(A2)
+	Move.w	6*3*2(A1),3*SizeLine*2(A2)
+	Move.w	6*4*2(A1),4*SizeLine*2(A2)
+	Move.w	6*5*2(A1),5*SizeLine*2(A2)
+	Move.w	6*6*2(A1),6*SizeLine*2(A2)
+	Move.w	6*7*2(A1),7*SizeLine*2(A2)
+	Move.w	6*8*2(A1),8*SizeLine*2(A2)
+	Move.w	6*9*2(A1),9*SizeLine*2(A2)
+	Move.w	6*10*2(A1),10*SizeLine*2(A2)
+	Move.w	6*11*2(A1),11*SizeLine*2(A2)
+	Move.w	6*12*2(A1),12*SizeLine*2(A2)
+	Move.w	6*13*2(A1),13*SizeLine*2(A2)
+	Move.w	6*14*2(A1),14*SizeLine*2(A2)
+	Move.w	6*15*2(A1),15*SizeLine*2(A2)
+	Move.w	6*16*2(A1),16*SizeLine*2(A2)
+	Move.w	6*17*2(A1),17*SizeLine*2(A2)
+	Move.w	(A1)+,(A2)
+	Adda.w	#SizePlanBarre,A2
+	Dbf	D4,.LoopPl
+	
+.NoGM	RTS
+	
+
+
+
+	******************* pour le cadre de début de level...
+	
+
+RestoreWorkingScreen
+	Movem.l	D0-D7/A0-A6,-(A7)
+	Move.l	Planar,A1
+	Move.l	A1,A0
+	Adda.l	#7*SizePlan,A0
+	Bra.s	AllWrkScr
+
+BackupWorkingScreen
+	Movem.l	D0-D7/A0-A6,-(A7)
+	*** Copie brute de l'écran de travail	(Sauvgegarde)
+	Move.l	Planar,A0
+	Move.l	A0,A1
+	Adda.l	#(NbPlans+1)*SizePlan,A1
+AllWrkScr	Move.l	#(SizePlan*8)/(12*4)-1,D0    Ca fait 1280-1=1279
+.Loop	Movem.l	(A0),D1-D7/A2-A6		12 registres
+	Movem.l	D1-D7/A2-A6,(A1)
+	Adda.l	#12*4,A0	
+	Adda.l	#12*4,A1	
+	Dbf	D0,.Loop
+	Movem.l	(A7)+,D0-D7/A0-A6
+	RTS
+
+
+RestoreWorkingScreenEHB
+	Movem.l	D0-D7/A0-A6,-(A7)
+	Movea.l	Planar,A1			A1: Actuel
+	Movea.l	A1,A0
+	Adda.l	#(NbPlans+1)*SizePlan,A0	A0: Ancien
+	Movea.l	A1,A2
+	Adda.l	#6*SizePlan,A2		A2: Plan 7 !
+	Movea.l	A2,A3
+	Adda.l	#SizePlan,A3	Limite supérieure
+	Move.l	#(SizePlan*NbPlans)/4-1,D0    Ca fait 1280-1=1279
+.Loop	Move.l	(A1)+,D1		Plan0:  %110
+	Move.l	(A0)+,D2
+	Eor.l	D2,D1		Ancien: %100 -> 010
+	Not.l	D1
+	And.l	D1,(A2)+		Modifs à 0 !
+	Cmpa.l	A3,A2
+	Blt.s	.Ok
+	Suba.l	#SizePlan,A2
+.Ok	Dbf	D0,.Loop
+
+*	Movea.l	Planar,A1			
+*	Adda.l	#NbPlans*SizePlan,A1	A1: Plan 7
+*	Move.l	#SizePlan/4-1,D0    Ca fait 1280-1=1279
+*.Loop2	Not.l	(A1)+
+*	Dbf	D0,.Loop2
+
+	Movem.l	(A7)+,D0-D7/A0-A6
+	RTS
+	
+		
+
+*************** Sauvegarder la palette
+*
+* (D0: Nombre de banques à SAUVER (de 32 couleurs) )
+* pour le mode EHB, par défaut on prend 2 banques à transformer
+*		
+MakePaletteEHB
+	Movem.l	D1-D7/A0-A6,-(A7)
+	Moveq	#4,D0		4 banques à sauver
+	Bsr	PaletteBackup
+	Move.w	#$4C00,D7		Valeur normale: banque 2 (0-7)
+	Moveq	#2-1,D0		2 banques à transformer
+
+	* On se s'occupe que des poids forts
+	Lea	PalWork2,A0	Sauvegarde
+	Move.w	D0,D2		Nombre de banques à lire
+.Loop6	Move.w	D7,BplCon3	Banque	
+	Lea	$dff180,A1
+	Moveq	#31,D1
+.Loop5	Move.w	(A0)+,D3
+	Lsr.w	#1,D3
+	And.w	#$FF77,D3
+	Move.w	D3,(A1)+	Poids forts
+	Dbf	D1,.Loop5
+	Add.w	#$2000,D7
+	Dbf	D2,.Loop6
+	Move.w	#%0000001000111111,BplCon2	Kill EHB+ Priorités Sprites
+	Move.w	#0,BplCon3	On restaure N° banque+bit L/H
+	Movem.l	(A7)+,D1-D7/A0-A6
+	RTS
+
+
+
+*************** Restaurer la palette
+*
+* D0: Nombre de banques (de 32 couleurs) à restorer
+*		
+PaletteRestore
+	Movem.l	D1-D7/A0-A6,-(A7)
+	Lea	PalWork2,A0	Sauvegarde
+	Subq.w	#1,D0
+	Move.w	#$0C00,D7		Valeur normale
+	Move.w	D0,D2		Nombre de banques à lire
+.Loop6	Move.w	D7,BplCon3	Banque	
+	Lea	$dff180,A1
+	Moveq	#31,D1
+.Loop5	Move.w	(A0)+,(A1)+		Poids forts
+	Dbf	D1,.Loop5
+	Add.w	#$2000,D7
+	Dbf	D2,.Loop6
+
+	Move.w	#$0C00,D7		Valeur normale
+	bset	#9,D7
+	Move.w	D0,D2		Nombre de banques à lire
+.Loop8	Move.w	D7,BplCon3	Banque	
+	Lea	$dff180,A1
+	Moveq	#31,D1
+.Loop7	Move.w	(A0)+,(A1)+	Poids faibles
+	Dbf	D1,.Loop7
+	Add.w	#$2000,D7
+	Dbf	D2,.Loop8
+	Move.w	#0,BplCon3	On restaure N° banque+bit L/H
+
+	Move.w	#0,BplCon3	On restaure N° banque+bit L/H
+	Movem.l	(A7)+,D1-D7/A0-A6
+	RTS
+
+
+*************** Initiliser la palette à 0
+*
+* D0: Nombre de banques (de 32 couleurs) à initialiser
+*		
+PaletteInit
+	Movem.l	D1-D7/A0-A6,-(A7)
+	Subq.w	#1,D0
+	Move.w	#$0C00,D7		Valeur normale
+	Move.w	D0,D2		Nombre de banques à lire
+.Loop6	Move.w	D7,BplCon3	Banque	
+	Lea	$dff180,A1
+	Moveq	#31,D1
+.Loop5	Clr.w	(A1)+		Poids forts
+	Dbf	D1,.Loop5
+	Add.w	#$2000,D7
+	Dbf	D2,.Loop6
+
+	Move.w	#$0C00,D7		Valeur normale
+	bset	#9,D7
+	Move.w	D0,D2		Nombre de banques à lire
+.Loop8	Move.w	D7,BplCon3	Banque	
+	Lea	$dff180,A1
+	Moveq	#31,D1
+.Loop7	Clr.w	(A1)+		Poids faibles
+	Dbf	D1,.Loop7
+	Add.w	#$2000,D7
+	Dbf	D2,.Loop8
+	Move.w	#0,BplCon3	On restaure N° banque+bit L/H
+	Movem.l	(A7)+,D1-D7/A0-A6
+	RTS
+
+
+
+
+******************************* Sauver D0 banques de palette
+
+PaletteBackup
+	Move.w	#1<<8,BplCon2	Lecture registres couleur
+	Lea	PalWork2,A0	Sauvegarde
+	Move.w	#$0C00,D7		Valeur normale
+	Subq.w	#1,D0
+	Move.w	D0,D2	Nombre de banques à lire
+.Loop2	Move.w	D7,BplCon3	Banque	
+	Lea	$dff180,A1
+	Moveq	#31,D1
+.Loop1	Move.w	(A1)+,(A0)+	Poids forts
+	Dbf	D1,.Loop1
+	Add.w	#$2000,D7
+	Dbf	D2,.Loop2
+
+	Move.w	#$0C00,D7		Valeur normale
+	bset	#9,D7
+	Move.w	D0,D2	
+.Loop4	Move.w	D7,BplCon3	Banque	
+	Lea	$dff180,A1
+	Moveq	#31,D1
+.Loop3	Move.w	(A1)+,(A0)+	Poids faibles
+	Dbf	D1,.Loop3
+	Add.w	#$2000,D7
+	Dbf	D2,.Loop4
+
+	Move.w	#0,BplCon2	Mode écriture
+	RTS
+
+********	Créer un dégradé
+*
+* D0: N° de la couleur de départ
+* D1: N° de la couleur de fin
+* D2: N° du dégradé dans les data (0-n)
+* A0: Adresse de la palette à modifier 
+*
+* D2-D4: Composantes actuelles 
+* D5-D7: Vecteurs
+*
+* Remarque: j'ai fait au plus simple sans chercher à optimiser à outrance
+* tout simplement parce que cela n'est pas destiné à être realtime.
+* J'ai donc fait des double Swap au lieu de AddX...
+*
+MakeDegrad
+	Lea	DegradesDat,A1
+	Mulu.w	#6,D2
+	Lea	(A1,D2.w),A1	Adresse dégradé	
+	Sub.w	D0,D1	D1: Nb couleurs-1
+	Clr.l	D2
+	Clr.l	D3
+	Clr.l	D4
+	Clr.l	D5
+	Clr.l	D6
+	Clr.l	D7
+	Move.b	(A1)+,D2
+	Move.b	(A1)+,D3
+	Move.b	(A1)+,D4
+	Move.b	(A1)+,D5
+	Move.b	(A1)+,D6
+	Move.b	(A1)+,D7
+	Swap	D2
+	Swap	D3
+	Swap	D4
+	Swap	D5
+	Swap	D6
+	Swap	D7
+	Sub.l	D2,D5
+	Sub.l	D3,D6
+	Sub.l	D4,D7
+	Divs.l	D1,D5
+	Divs.l	D1,D6
+	Divs.l	D1,D7
+	Lea	(A0,D0.w*4),A1	Adresse départ modif
+	Bsr	.CopCoul		A0: Départ palette = Couleur 0
+	*Move.l	#$ffff00,(A0)
+	Movea.l	A1,A0
+.Loop	Bsr	.CopCoul
+	Add.l	D5,D2
+	Add.l	D6,D3
+	Add.l	D7,D4
+	Lea	4(A0),A0
+	Dbf	D1,.Loop		
+	RTS
+.CopCoul	Clr.l	D0
+	Swap	D2
+	Swap	D3
+	Swap	D4
+	Move.b	D2,D0
+	Lsl.w	#8,D0
+	Move.b	D3,D0
+	Lsl.l	#8,D0
+	Move.b	D4,D0	
+	Move.l	D0,(A0)
+	Swap	D2
+	Swap	D3
+	Swap	D4
+	RTS
+
+********  Passer au dégradé suivant
+*
+* <-> D1 (E/S)
+*
+NextDegrade
+	Addq.w	#1,D1
+	Cmp.w	#NbDegrades,D1
+	Blt.s	.OkD
+	Clr.w	D1
+.OkD	RTS
+
+********	Copier une zone
+*
+* A0: Adresse source
+* A1: Adresse destination
+* D0: Taille à copier en long-word
+*
+CopZone
+	Subq.w	#1,D0
+.Cop	Move.l	(A0)+,(A1)+	
+	Dbf	D0,.Cop		
+	RTS		
+		
+
+
+
+		

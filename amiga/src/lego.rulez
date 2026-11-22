@@ -1,0 +1,29 @@
+
+
+
+
+
+    Bombs movements.
+
+When a bomb which is moving collides with another one, then movement
+energy is transmitted to each other. 
+
+
+    Push-Bombs
+
+You can collect the push-bombs, which permits you to push the bombs
+by walking in direction of bombs you want to push !
+If you are behind a column of many bombs, you can push them by
+doing as many up-down or left-right movements as there are bombs.
+
+
+    "Maladies":
+
+When you are ill, you can transmit the "maladie" to other players
+by touching them. When you do that, you give your remaining time to
+the other player and your "maladie" time is divided by two.
+So be careful when you have invincibility one !
+Then only bonus you can give without time decreasing is speed-up one.
+
+
+

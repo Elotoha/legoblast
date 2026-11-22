@@ -1,0 +1,18 @@
+
+
+
+
+
+	Move.l	#50,D5		Danger=0,Direction=0,Offset 64*16 .W
+	Subq.w	#2,D5		X-1
+	Or.l	#$1000000,D5	Direction 1: X-1
+
+	Moveq	#-1,D5
+
+	Move.l	D5,D3
+	Swap	D3
+	Lsr.w	#7,D3
+	Ext.l	D3
+
+	RTS
+	

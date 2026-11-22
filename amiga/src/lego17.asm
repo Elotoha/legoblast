@@ -1,0 +1,3816 @@
+
+***************************************************
+*                   LEGOBLAST                     *
+***************************************************
+* BY                                              *
+*         Cod :               Gogo                *
+*         Graphics :          Cobalt              *
+*                             Black Angel         *
+*         Musicos/Sound :     PowerB              **                             Cobalt              *
+*                             Black Angel         *
+*         Coder I.A.:         ?                   *
+*-------------------------------------------------*
+* SPECIFICATIONS                                  *
+*         Machine:  AGA, 68020+                   *
+*         Screen:   320*256*79 colours            *
+*         Players:  Max. 6                        *
+*         Type:     GiftWare                      *
+***************************************************
+* INFO: 293 Variables, >>15000 Lines              *
+***************************************************
+* Je recommence le 30/05/2000 à la version 16 au lieu de 18
+* - Micro immobile si on pose une bombe qui met en danger sa case cible
+* - Micro con: une seule case but, point final, même si danger!
+* - Touche ESC dans options
+* - LevelInfoState reste à -1 quand on commence un niveau !
+* - Démarrage niveaux avec téléporteurs; faut poser une bombe!
+* - Gestion poils cul cramés (son se joue plus !)
+* - Retour podium: flash info bar
+* - Bombe a moitié sur mur de fin ne s'efface pas
+* - Mettre tous les IncBin en LOAD()
+* - TimerDat2: Milieu du timer n'est plus géré ! (perte de version)
+* (- Fin level: bug spirale <- ? (test bordure: plus nécessaire)
+* - Bonus grosse maladie qui combine plusieurs maladies existantes!
+* - Maladies s'affichent comme fin de maladies barre hires ? (Collique)
+*
+* - InitsAnimPodium avant changement d'affichage et jauge d'attente
+* - Nouvelle jauge avec dégradé copper (copie goro ???)
+* - Bonus goutte d'eau: pas d'explosions ou explosions gelées ou stoppées.
+* - Retour podium: pas de musique <- ? TESTER
+* (- Accentuer le JAUNE dans la palette des GRIS (podium))
+* (- Random podium <-- ???
+* - FadeBetween: utiliser la palette sans SWAP, car Bsr Colour SAaaaAle!!!!
+* - En cas de fin de match, le bloc copié avec le son fait planter. (#7)
+*   Copie bombe or (1,0) haut gauche quand égalité
+*   Egalité: fin level: bloc copié et plantage
+* - Ecart entre les joueurs en mode TEAMS anormal
+* - Couleur assignée comme précédemment à la création
+*   problème pour les sprites !!!!! les VRAIS... non ? PrepPos
+* (- Confettis)
+* (- Double buffer anims podium)
+* (- Pas son apparition
+* - StatsBloc
+*   Copier petite bombe et petite mort
+* - Voir propreté affichage et changement levels: 1..
+* - Mec bouge pas: blanker
+* (- Faire un fichier pour tous les levels
+* (LevelsAdr (attention à dynablaster référencé directement avec un LEA)
+* (- Réfléchir possibilité de stocker la zone inutile de sprites en Fast)
+* (- Musique dynablaster pour mode dynablaster)
+* (- Entre les fading de menus, petite ligne qui clignote !!!)
+* - QUAND PAS ASSEZ MEMOIRE: P6 NE COUPE PAS LA MUSIQUE SYSTEME !!!!
+* - BUG couleurs sprites foncés... 1..
+* - Msg1 et Msg2 pour AgaOnly et CpuMini 68020
+* - niveaux teams 
+* - Gestion des contrôles dans le menu options ...
+* - Fading appui sur ESC
+* - Icones transparent bombe sur bonus = bug (?)
+* - Fin mvt bumper vues Droite et Bas mec: inversion: bas<->haut gauche<->dr
+*   (Sûrement à cause du dépassement sur les murs: vitesse de poussée du 
+*   bumper trop rapide.)
+* (- Mec échappe de justesse a une flamme: son Mais pas quand invincible)
+*   (Les sons ont été désactivés pour l'instant)
+* - Un seul micro possible au lieu de 4 + coder micro
+* - Config clavier : "Key already in use- RePress to delete other key definition"
+* (- Transmission d'énergie des flammes)
+* (- Nouvelle capture d'écran avec barre info et sprites.)
+* - Enlever la touche "S" pendant jeu...
+* (- VblWait #25 dans la routine d'interruption !!!
+*
+*********** GRAFX
+*
+* - Palette joueur mauve
+* - Ombre de bras des feelings...
+* - Les condensateurs ont une ombre rouge
+* - Changement d'explosion de bonus avec technique guillaume
+*
+*
+************************** Touches
+* TAB 		Capturer écran
+* +- 		Volume Musique
+* */ 		Volume Sons
+* F1 		Level précédent	F1 menu: 1 voie
+* F2 		Level suivant		F2 menu: 2 voies
+* F3 		Mod 1		F3 menu: 3 voies
+* F4-F9 		Mod 2-7		F4 menu: 4 voies
+* F10		Music off
+* P  		Pause
+* C 	 	Couleur (debug)
+* BACKSPACE	Création micro
+* DEL		Affichage barre état
+* HELP		Rejouer niveau
+* \   		Résultats intermédiaires en début ou fin de niveau
+* ESC		Quitter le jeu
+* CHEAT_ENABLED seulement:
+* S  		Slow On/Off
+* ,;:=  		Règlage de la vitesse des flammes
+*
+*
+*
+*
+	incdir	work:asm/lego/
+	include	Big.i
+	include	file_save.i
+	include	exec/exec.i
+	include	dos/dosextens.i
+	include	dos/dos.i
+
+
+	*Move.l	#Zone1_Size,D1
+	*Move.l	#Zone2_Size,D2
+	*Move.l	#Zone3_Size,D3
+	*rts
+	
+
+	* Ne pas oublier les statistiques: nombre de bombes posées, etc..
+	*	
+***************	CONSTANTES
+
+** Commutateurs
+
+*SuperMan			=	1
+
+Music_Activation 		=	1
+DoubleBuffer_Activation 	=	0
+WaitHard_Activation		=	1
+VblSprites_Activation	=	1
+Vbl_Display		=	0
+Use			=	-1
+
+** Tailles
+
+SizeCopperList		=	4*100
+SizeLine			=	40
+SizePlan			=	SizeLine*256
+SizePlanBarre		=	SizeLine*2*18
+SizePlanBarre2		=	SizeLine*18
+SizePlanMenu		=	SizeLine*256
+SizePlanStatsBlocs		=	3*122	24 de largeur, masque+7 pls
+SizeLineFlam 		=	20
+SizePlanFlam 		=	16*SizeLineFlam
+MaxSamples		=	30
+MaxPictures		=	10
+
+MaBomb			=	300	<-- Maximum si tout l'écran = bombes ;-)	
+MaMur			=	20*16
+MaTele			=	20*16
+MaBumper			=	20*16
+NbLevels			=	2 	Juste pour le mode Rnd levels
+NbPlans			=	6	=143360 octets screen
+NbPlansBarre		=	6
+NbPlansBarre2		=	6
+SizeStructure     		=	4       Faire gaffe au *4 pour le Dim 4 (Flammes)
+SizeDim			=	64*64*4	64*64*4 ((20*2)*(16*2) sur l'écran)
+SizeDimLittle		=	64*32*4	pour gagner de la mémoire
+SizeDimIA1		=	64*64*4
+SizeDimIA2		=	300*4*2	Source(X.W,Y.W),Cible(Idem)
+SizeDimIA3		=	4*64*2	Colonnes-Lignes	
+SizeDimIA45		=	4400
+NbDegrades		=	6	Degradés menus
+           
+HotKey_MenuSlideShow	=	64 	Espace
+HotKey_MenuQuit		=	69	Escape
+
+*SizeSprites		=	33408
+*SizeIndex		=	1152
+
+YOFFNEG			=	10	Nombre de lignes "négatives" avec DiwStart
+XDecal			=	1	Cases (8) (=1)
+YDecal			=	0	Pixels (=5)
+
+** Réglages fonctionnalités
+
+HEURE		=	180000	Nombre de VBL dans une heure
+MINUTE		=	3000	Nombre de VBL dans une minute
+SECONDE		=	50	Nombre de VBL dans une seconde
+
+NbLevelsParWorld		=	30
+LevelsPtrZone		=	2*NbLevelsParWorld*6*4	    *Nb de Worlds!
+NbImsParSprite		=	225	(199) Nb d'images par bonhomme
+ImDebMortFl		=	36+36	Mort par fondaison
+ImFinMortFl		=	36+67+36
+ImDebMortEcr		=	36+36	Mort par écrasement
+ImFinMortEcr		=	36+67+36
+ImDebTele			=	104+36	Téléportation
+ImFinTele			=	169-1	
+ImDebFin1			=	170	Mec montre poing (Loop)
+ImFinFin1			=	177-1
+ImDebFin2			=	178	Mains poches + siffle (Loop)	
+ImFinFin2			=	189-1	
+ImDebFin3			=	190	Tape pied + doigts (Loop)
+ImFinFin3			=	201-1
+ImDebFin4			=	202	Mec pleure (Loop)
+ImFinFin4			=	213-1
+ImDebFin5			=	214	Mains poches (victoire)
+ImFinFin5			=	219-1	
+ImDebFin6			=	220	Mec croise bras (victoire)
+ImFinFin6			=	225-1
+ImDebBlanker		=	190	Mec mains poches (6 vues)
+ImFinBlanker		=	201-1
+
+ImDebBlocTele		=	135
+ImFinBlocTele		=	142
+ImDebBlocBumper		=	231
+ImActBlocBumper		=	233
+ImFinBlocBumper		=	238
+NbMaxMessages		=	10 	?? géré ou pas ??
+
+PosDigit			=	0	368	Position timer
+StartB1			=	0	Teams
+StartB2			=	448	Individual
+StartB3			=	256
+LargB			=	96	88 ou 96
+DiffB			=	6	5,6 Nb Octets entre Jou et Bloc
+PosNomLvlB		=	0	208
+OffPosBarre		=	10*6 (6 joueurs)
+
+ImDebFill			=	143	Début anim bloc Fill
+ImFinFill			=	147
+NbImFill			=	ImFinFill+1-ImDebFill	Nombre images Fill
+
+Bloc_Vide			=	148	Bloc vide
+
+
+YplusUN	= SizeStructure*64*4
+XplusUN	= SizeStructure*4
+
+BombImL			=	0	Image Low boucle
+BombImT			=	4	Image Top	couble
+BombImFin			=	20	Dernière image anim
+BombNbBoucles		=	15	150 en 1 vbl
+BombCalcTime		=	(BombImT-BombImL+1)*BombNbBoucles+BombImFin-BombImT
+BombNbBouclesF		=	8
+BombCalcTimeF		=	(BombImT-BombImL+1)*BombNbBouclesF+BombImFin-BombImT
+BombNbBouclesS		=	30
+BombCalcTimeS		=	(BombImT-BombImL+1)*BombNbBouclesS+BombImFin-BombImT	(= 166)
+BombNbBouclesVF		=	2
+BombCalcTimeVF		=	(BombImT-BombImL+1)*BombNbBouclesVF+BombImFin-BombImT
+BombImGel			=	195+15	Bombes gelées
+
+
+
+MurDestrNbIms		=	4	images/destruction de mur
+BonusDestrNbIms		=	4	images/destruction de bonus
+NbBonus			=	23	Nombre de bonus existants(Pas images, mais bonus)
+NombreBonusHires		=	3*14	Nb dessins hires (fin maladies)
+NombreMecsHires		=	3*6+3*3	Nb dessins mecs
+ImMaladie			=	23	Image réception maladie
+ImBonusCadeau		=	27	Image réception cadeau
+NbZiks			=	2	<- oik ?
+
+Flash_Time		=	10	Vitesse flashing
+LastPhaseTime		=	10	Temps anim Winners
+TimeDecalChaud		=	100	Décalage cases test
+TimeBarreQ		=	2	Affichage bref
+TimeBarreDONTMOVE		=	3*SECONDE	Affichage spécial
+TimeBarre2		=	5	en secondes
+TimeBarre2Del		=	10	demandé par humain: plus long
+TimeDontMoveMax		=	6	Premières secondes couvertes! (attention! contient le temps d'anim de mort !)
+TimeBlanker 		=	5	pour mec immobile
+TimeRestartDontMove		=	100	Temps début don't move avant appui automatique sur le Feu
+
+TimeAnim			=	3	Pour anims marche
+TimeAnimLent		=	5	Pour feelings
+Time_Clignote_Invincible	=	10
+
+NbJoueurs			=	6
+LevelRalentTime		=	3
+LevelBeginWait		=	15
+LevelBeginMinWait5		=	LevelBeginWait+25	Attente mini en mode 5 win match
+LevelBeginMinWaitF		=	0		Attente mini en mode Free play
+
+_DECAL			=	20	Correspondance AMOS
+Type_Rien			=	-1	(*) = Pas d'image associée
+Type_Font			=	0
+Type_Bloc_NoDestr		=	1
+Type_Bloc_Destr		=	2
+Type_Bloc_NoDestr2		=	3	Mode "spécial Guillaume"
+Type_DEBUTDALLES		=	4
+Type_AntiFeu		=	4	* 10
+Type_AntiMec		=	5	* 11
+Type_AntiFeuMec		=	6	* 12
+Type_Explo		=	7	* Fait exploser les bombes
+Type_FINDALLES		=	7
+Type_BumperH		=	8
+Type_BumperB		=	9
+Type_BumperG		=	10
+Type_BumperD		=	11
+Type_DEBUTDALLES2		=	12
+Type_FlecheH		=	12
+Type_FlecheD		=	13
+Type_FlecheB		=	14
+Type_FlecheG		=	15
+Type_DalleExplo		=	16
+Type_FINDALLES2		=	16
+Type_Bumper		=	27
+Type_Bonus		=	28	 
+Type_Bombe		=	29	
+Type_Bonus_DestrAct		=	30	En cours de destruction
+Type_Bloc_DestrAct		=	31	En cours de destruction
+Type_Toyo			=	32	Tuyaux	%GDHB
+Type_Toyo_ImBase		=	181+15
+Type_ToyoHB		=	Type_Toyo+%0011
+Type_ToyoDB		=	Type_Toyo+%0101
+Type_ToyoDH		=	Type_Toyo+%0110
+Type_ToyoDHB		=	Type_Toyo+%0111
+Type_ToyoGB		=	Type_Toyo+%1001
+Type_ToyoGH		=	Type_Toyo+%1010
+Type_ToyoGHB		=	Type_Toyo+%1011
+Type_ToyoGD		=	Type_Toyo+%1100
+Type_ToyoGDB		=	Type_Toyo+%1101
+Type_ToyoGDH		=	Type_Toyo+%1110
+Type_ToyoGDHB		=	Type_Toyo+%1111
+
+TBonus_Flamme		=	1
+TBonus_Bombe		=	2
+TBonus_PousseB		=	3
+TBonus_MalInv		=	4	Ma1
+TBonus_MalFla		=	5	Ma2
+TBonus_MalTBF		=	6	Ma3	Time Bomb Fast
+TBonus_MalVitL		=	7	Ma4
+TBonus_MalVitR		=	8	Ma4
+TBonus_MalTBS		=	9	Ma3
+TBonus_Camembert		=	10	Fait tout péter
+TBonus_GeleB		=	11
+TBonus_MalFlaG		=	12	Ma2
+TBonus_MalNoB		=	13	Ma5
+TBonus_MalMB		=	14	Ma6 (+10 bombes)
+TBonus_MalGoutDo		=	15	Ma7 (Invincible)
+TBonus_Ambulance		=	16	
+TBonus_Horloge		=	17
+TBonus_MalReBomb		=	18	Ma8 (Rebond bombes)
+TBonus_BombeFolle		=	19
+TBonus_BcpBombes		=	20
+TBonus_BcpFlammes		=	21
+TBonus_Cadeau		=	22
+TBonus_MalPoseB		=	23	Ma9 (Collique)
+
+HotX		=	7	Hot Spot des sprites
+HotY		=	25-5+YOFFNEG
+ColDr		=	8+1+1	Collisions mouvement
+ColGa		=	7+1
+ColHa		=	6+1+1+1
+ColBa		=	6+1+1
+LColDr		=	8-2	Collisions centrage
+LColGa		=	7-2+1
+LColHa		=	6-2
+LColBa		=	6-2+2
+
+
+*** Réglages jeu
+
+NbBombesDef	=	1	Bombes/Joueur au début d'un level
+
+Speed_Fast	=	4	Vitesse mouvement Lego
+Speed_Normal	=	2
+Speed_Slow	=	1
+
+Time_Malad	=	1500	Temps de maladies
+Time_Malad_Short	=	750	Temps de maladies COURTES (dures quoi!, ou bonus trop gentils, genre goutte d'eau)
+Time_GeleB	=	500	Temps où les bombes sont gelées
+
+BTime_VeryFast	=	BombCalcTimeVF
+BTime_Fast	=	BombCalcTimeF	Temps explosion bombes
+BTime_Normal	=	BombCalcTime	
+BTime_Slow	=	BombCalcTimeS
+
+Flam_VNormal	=	0	Vitesse Flammes =0 défaut
+Flam_VSpeed1	=	1
+Flam_VSpeed2	=	2
+Flam_VSpeed3	=	3
+
+Flam_LShort	=	3	Longueur Flammes maladie
+Flam_LNormal	=	5	Longueur Flammes au départ
+Flam_LLong	=	50	Longueur Flammes maladie max
+
+Bonus_PousseB	=	0	Pousse Bombes
+
+NbBombMore	=	10	+N bombes: Maladie pleins de bombes
+
+PriSonWinT1	=	41
+PriSonWinT2	=	42
+PriSonWin		=	40
+PriSonBombeOr	=	35
+PriSonDontMove	=	34
+PriSonSirene	=	33
+PriSonMort	=	30	Priorités des sons (.w)
+PriSonTresChaud	=	11
+PriSonChaud	=	10
+PriSonTeleDeb	=	5
+PriSonHiroshima	=	1
+PriSonExplosion	=	0
+*PriSonPoseFin	=	-1
+PriSonTele	=	-3
+PriSonFinMalad	=	-5
+PriSonBonus	=	-7
+PriSonZoingBump	=	-9
+PriSonBongBombe	=	-11
+PriSonChocBombe	=	-13
+PriSonPoseBombe	=	-15	
+PriSonPoseFin	=	-16
+
+NbSamples			=	20	Pour la jauge
+NbMusics			=	9
+LargJaugeSamples		=	120	80 (106)
+HautJaugeSamples		=	6	5
+XJaugeSamples		=	107	50+100
+YJaugeSamples		=	129	65+70
+XTextSamples		=	109	50+100
+YTextSamples		=	114	50+70
+JaugeNbElements		=	NbSamples+5
+Jauge_Rouge		=	3
+Jauge_Milieu		=	5
+Jauge_Gris		=	24
+
+** Structures nécessaires
+
+	RsReset	*	Joueurs
+Leg	Rs.w	0	
+Leg_Activated Rs.w	1	Joueur activé(0:non 1:activer -1:activé) 
+Leg_Joy	Rs.l	1	Adresse routine joystick
+Leg_FireRequest Rs.w 1	Demande d'appui sur Feu dans T VBL !!!
+Leg_Fire	Rs.w	1	Fire/Pas Fire
+Leg_FireAct Rs.w	1 
+Leg_FireAnc Rs.w	1
+Leg_AutoFire Rs.w	1	Autofire pour poser bombes On/Off
+Leg_NbF	Rs.w	1	
+Leg_X	Rs.w	1	Position X (en pixels)
+Leg_Y	Rs.w	1	Position Y
+Leg_XDim	Rs.w	1	Petite case (alignée gauche d'une grosse case)
+Leg_YDim	Rs.w	1	
+Leg_Im	Rs.w	1	Image
+Leg_ImBl	Rs.w	1	Décalage ou 0
+Leg_Time	Rs.w	1	Temps explosion bombe
+Leg_Malad	Rs.w	1	"Sert a rien"
+Leg_TMalad Rs.w	1	idem
+Leg_MaBomb Rs.w	1	Nombre de bombes restantes (droit de poser)
+Leg_Flamme Rs.w	1	Longueur des flammes
+Leg_BTime	Rs.w	1	Temps explosion bombes
+Leg_NbBoucles Rs.w	1	Anim bombes
+Leg_VitJou Rs.w	1	vitesse joueur en pixels/frame
+Leg_Mort	Rs.w	1	Mort/Pas Mort
+Leg_MortMem Rs.w	1	Etat special anim mort
+Leg_DontMove Rs.w	1	Nombre de morts pour CE level !
+Leg_PousseBombe Rs.w 1	Poussebombes / non
+Leg_PousseOk Rs.w	1	"interne": coups pour pousser les bombes (superman sinon)
+Leg_Horloge Rs.w	1	Bombe gelée
+Leg_HMem	Rs.l	1	"interne": mémoire de la bombe dirigée par l'horloge
+Leg_TelOk	Rs.w	1	"interne"
+Leg_MdX	Rs.w	1	Pour anim marche
+Leg_MdY	Rs.w	1	idem
+Leg_ImBase Rs.w	1	Base des images du sprite 
+Leg_ForceCentre Rs.w 1	"interne"
+Leg_TeleX	Rs.w	1	But X de la téléportation en cours
+Leg_TeleY	Rs.w	1	idem Y
+Leg_Tele	Rs.w	1	téléportation en cours/non
+Leg_TelePhase Rs.w	1	idem
+Leg_BumpX	Rs.w	1	Quand le mec se fait déchirer par un bumper ! :-)
+Leg_BumpY	Rs.w	1
+Leg_Offset Rs.w	1	Info pour les bumpers
+Leg_Ralent Rs.w	1
+Leg_OkBump Rs.w	1
+Leg_M1	Rs.w	1	Maladies
+Leg_M1Mem	Rs.w	1
+Leg_M2	Rs.w	1
+Leg_M2Mem	Rs.w	1
+Leg_M3	Rs.w	1
+Leg_M3Mem	Rs.w	1
+Leg_M4	Rs.w	1
+Leg_M4Mem	Rs.w	1
+Leg_M5	Rs.w	1
+Leg_M5Mem	Rs.w	1
+Leg_M6	Rs.w	1
+Leg_M6Mem	Rs.w	1
+Leg_M7	Rs.w	1
+Leg_M7Mem	Rs.w	1
+Leg_M8	Rs.w	1
+Leg_M8Mem	Rs.w	1
+Leg_M9	Rs.w	1
+Leg_M9Mem	Rs.w	1
+Leg_M10	Rs.w	1
+Leg_M10Mem Rs.w	1
+Leg_M2Mem2 Rs.w	1
+Leg_M3Mem2 Rs.w	1
+Leg_M3Mem3 Rs.w	1
+Leg_M4Mem2 Rs.w	1
+Leg_BarreX Rs.w	1
+Leg_BarreY Rs.w	1
+Leg_BarreBase Rs.w	1
+Leg_BarreBlocX Rs.w	1
+Leg_BarreX4 Rs.w	1
+Leg_BarreY4 Rs.w	1
+Leg_BarreBase4 Rs.w	1
+Leg_BarreBlocX4 Rs.w 1
+Leg_BarreX8 Rs.w	1
+Leg_BarreY8 Rs.w	1
+Leg_BarreBase8 Rs.w	1
+Leg_BarreBlocX8 Rs.w 1
+Leg_LastPos Rs.l	1
+Leg_LastPos2 Rs.l	1
+Leg_LastCount Rs.w	1
+Leg_LastBomb Rs.w	1
+Leg_GamesPlayedT	Rs.l 1	<- STAT
+Leg_GamesLooseT	Rs.l 1	<- STAT
+Leg_GamesWonT	Rs.l 1	<- STAT
+Leg_GamesPlayed	Rs.l 1	<- STAT	Toutes les STATS sont en .L !
+Leg_GamesLoose	Rs.l 1	<- STAT
+Leg_GamesWon	Rs.l 1	<- STAT
+Leg_BombesPosees	Rs.l 1	<- STAT   (On sait jamais avec les fous ;-))
+Leg_BonusTaken	Rs.l 1	<- STAT
+Leg_FeelCol	Rs.w	1	Couleur dans la palette podium
+Leg_SizeOf Rs.w	0		Taille structure joueur lego
+
+JplusUN	= Leg_SizeOf
+
+	RsReset	*	Bombes	
+Bomb	Rs.w	0
+Bomb_X	Rs.w	1	Position X (à la case près)
+Bomb_Y	Rs.w	1	
+Bomb_Vx	Rs.w	1	Vitesse X (-1,0,1)
+Bomb_Vy	Rs.w	1	Idem Y
+Bomb_Im	Rs.w	1	N° de l'image actuelle de l'anim de la bombe
+Bomb_Cpt	Rs.w	1	Compteur boucle d'anim
+Bomb_Energy Rs.w	1	Nombre de blocs d'explosion
+Bomb_Time	Rs.w	1	Temps restant en nombre de Vbl
+Bomb_Exist Rs.w	1	Trou dans le tableau/Bombe existante
+Bomb_Active Rs.w	1	Bombe en pause/Bombe active
+Bomb_Horloge Rs.w	1	Bombe bloquée par une horloge ou non
+Bomb_JMem	Rs.l	1	Mémoire du joueur qui bloque la bombe actuelle
+Bomb_Routine Rs.l	1	Adresse de la routine de gestion intelligente
+Bomb_Joue	Rs.w	1	N° du joueur-1 qui a posé cette bombe
+Bomb_MouvOk Rs.w	1
+Bomb_FirstI Rs.w	1	Une image a déjà été posée ? (gelage des bombes)
+Bomb_Reb	Rs.w	1	Bombe rebondit ou pas
+Bomb_SizeOf Rs.w	0	=2^N ... ?
+
+	RsReset	*	Flammes
+Flamme	Rs.w	0
+Flam_X	Rs.w	1
+Flam_Y	Rs.w	1
+Flam_Vx	Rs.w	1	Direction X/Y de la flamme	
+Flam_Vy	Rs.w	1	
+Flam_Vel	Rs.w	1
+Flam_Exist Rs.w	1	Flamme ok/vide
+Flam_Active Rs.w	1	Active/Non-Active
+Flam_Phase Rs.w	1	Phase: Expansion/Disparition
+Flam_Energy Rs.w	1	Energie de la flamme: Une case=N energie
+Flam_Nb	Rs.w	1
+Flam_Bout	Rs.w	1
+Flam_XEff	Rs.w	1
+Flam_YEff	Rs.w	1
+Flam_Num	Rs.w	1	Numéro de flamme 
+Flam_A1	Rs.l	1	Autres flammes
+Flam_A2	Rs.l	1
+Flam_A3	Rs.l	1
+Flam_Master Rs.w	1
+Flam_BoutEff Rs.w	1
+Flam_LastEff Rs.w	1
+Flam_SizeOf Rs.w	0	32
+
+	RsReset
+Mur	Rs.w	0
+Mur_Exist	Rs.w	1
+Mur_X	Rs.w	1
+Mur_Y	Rs.w	1
+Mur_Type	Rs.w	1	Mur/Bonus
+Mur_ImA	Rs.w	1	Image actuelle
+Mur_ImF	Rs.w	1	Image de fin
+Mur_SizeOf Rs.w	1	
+
+	RsReset
+Tele	Rs.w	0
+Tele_X	Rs.w	1
+Tele_Y	Rs.w	1
+Tele_ImA	Rs.w	1
+Tele_SizeOf Rs.w	1
+
+	RsReset
+Bumper	Rs.w	0
+Bumper_Activate Rs.w 1
+Bumper_X	Rs.w	1
+Bumper_Y	Rs.w	1
+Bumper_Off1 Rs.l	1	Offset de la case de test 1
+Bumper_Off2 Rs.l	1	Offset de la case de test 2
+Bumper_VX	Rs.w	1	Vitesse de l'objet poussé
+Bumper_VY	Rs.w	1
+Bumper_Eta Rs.w	1
+Bumper_ImA Rs.w	1
+Bumper_ImBa Rs.w	1
+Bumper_SizeOf Rs.w	1
+
+
+	RsReset	* Dim Flammes
+Dim4_Struct Rs.w	0	QUARTS DE CASES: FLAMMES
+Dim4_Mask	Rs.b	1	Masque total des 8 compteurs ci-dessous
+Dim4_HG	Rs.b	1	7 Nb de coins haut-gauche arrondis
+Dim4_HD	Rs.b	1	6 Nb de coins haut-droit arrondis
+Dim4_BG	Rs.b	1	5 Nb de coins bas-gauche arrondis
+Dim4_BD	Rs.b	1	4 Nb de coins bas-droit arrondis
+Dim4_HH	Rs.b	1	3 Nb de haut de flamme H
+Dim4_BH	Rs.b	1	2 Nb de bas de flamme H
+Dim4_GV	Rs.b	1	1 Nb de gauche de flamme V
+Dim4_DV	Rs.b	1	0 Nb de droit de flamme V
+	Rs.b	6
+	Rs.b	1
+Dim4_SizeOf Rs.w	0
+
+	RsReset	* Levels
+Level		Rs.w	0
+Level_Nom		Rs.l	1
+Level_Time1	Rs.l	1	Temps alerte
+Level_Time2	Rs.l	1	Temps maxi
+Level_FillXMin	Rs.w	1	Position/Sens de départ de remplissage
+Level_FillYMin	Rs.w	1
+Level_FillXMax	Rs.w	1
+Level_FillYMax	Rs.w	1
+Level_FillNb	Rs.w	1	Nombre de cercles
+Level_SpeedJ	Rs.w	1	Speed joueurs
+Level_NbB		Rs.w	1	Nombre bombes/joueur
+Level_LongF	Rs.w	1	Longueur Flammes
+Level_PousseB	Rs.w	1	Pousse bombes
+Level_PosDep	Rs.w	2*8	Position de départ des joueurs
+Level_Palette	Rs.w	1	N° Palette pour le level (0,1,...)
+Level_Flam	Rs.w	1	N° Flammes pour le level (0,1,...)
+Level_Bloc	Rs.w	30	Images pour tout
+Level_TimeB	Rs.w	1	Temps bombe
+Level_AutoFire	Rs.w	1	Autofire (spécialement pour ce level)
+Level_BordelVide	Rs.w	18	"Vide" au cas où ....
+Level_BonusOk	Rs.w	30	Probabilités bonus pour le niveau !
+Level_Dat		Rs.b	19*15	Données
+Level_Nothing	Rs.b	1
+Level_Tele	Rs.w	1	Téléporteurs
+Level_SizeOf 	Rs.w	0
+
+	RsReset
+Feel_X		Rs.w	1	Position X sur l'écran
+Feel_Y		Rs.w	1	Position Y sur l'écran
+Feel_Anim		Rs.w	1	N° de l'animation
+Feel_Vue		Rs.w	1	Position dans l'animation (0-7)
+Feel_SSizePlan	Rs.w	1	Taille plan zone copiée
+Feel_SSizeLine	Rs.w	1	Taille ligne zone copiée
+Feel_AdrPlan	Rs.l	1	Adresse zone copiée
+Feel_NumPl	Rs.w	1	Numéro du joueur à générer
+Feel_SizeOf	Rs.w	0
+
+
+*** Réservations de mémoire
+
+Fast	=	Memf_fast|Memf_Clear
+Chip	=	Memf_Chip|Memf_Clear
+Public	=	Memf_Public|Memf_Clear
+
+
+DEBUT	
+	*include	misc/iconstartup.i
+	*Jsr	LoadLevels
+
+	Move.l	#-1,SYSTEM_RESIDENT
+	Clr.l	PALETTE_IN_PROGRESS
+	Clr.l	DO_NOT_RETAKE_SYSTEM
+	Clr.l	ONLY_LOAD_ZIK
+	IFNE	Music_activation
+		Move.l	#3,P61_Channels
+	ENDC
+	AgaOnly
+	CpuMini	68020
+	Bset	#1,$BFE001	LED OFF: filtre passe-bas inactif
+
+	Clr.l	TotalPlayingTime
+
+	**** Pointeurs sur Images 
+	Lea	PicturesDef,A0
+	Moveq	#MaxPictures-1,D0
+.InitPic	Clr.l	(A0)+
+	Clr.l	(A0)+
+	Adda.w	#4,A0
+	Dbf	D0,.InitPic
+	
+
+
+	RsReset
+Prefs		Rs.w	0
+Prefs_HEADER	Rs.l	1
+Prefs_MusicVol	Rs.w	1	Volume musiques
+Prefs_SoundVol	Rs.w	1	Volume sons
+Prefs_DegradeMenuA	Rs.w	1	Dégradé menu principal
+Prefs_DegradeMenuB	Rs.w	1	Dégradé menu options
+Prefs_FILL	Rs.w	18	Nombre de prefs max créables
+Prefs_Zik		Rs.w	1	Musique
+Prefs_LevelsSet	Rs.b	200 	Grd nb de levels, on sait jamais
+Prefs_LevelsSet_END Rs.b	0
+Prefs_MenusPtr	Rs.l	20	Nb de pointeurs max sauvables
+Prefs_SIZEOF	Rs.w	0
+
+
+*	Move.l	#MsgErrSprite,MemBIGError
+
+	**************   DEBUT PREFS	***************
+
+	*** Chargement du fichier Préférences
+PrefsR	*Bra.s	.DefaultPrefs
+	Lea	FichConfig,A0
+	Move.l	#Public,D1
+	Jsr	ChargeFichier
+	Tst.l	D0
+	Beq	.DefaultPrefs	Erreur: Pas de mémoire à rendre
+	Cmp.w	#Prefs_SizeOf,D0
+	Beq.s	.FilePrefs
+	* Fichier correct mais mauvaise taille: On rend la mémoire et
+	* on ignore le fichier
+	Jsr	_LVOFreeMem(A6)	(A1/D0)	
+	Bra	.DefaultPrefs
+.FilePrefs
+	**** On lit les prefs du fichier: ON VERIFIE TOUTES LES VALEURS,
+	*    pour ne pas avoir la moindre chance d'avoir un plantage
+	*    à cause d'un fichier Prefs buggé.
+	* Et puis c'est à ce genre de petits détails que l'on reconnait
+	* les grands codeurs ! ;-) (Mais non j'ai pas les chevilles qui 
+	* enflent)... Bon fini le délire, je m'y remets...
+
+	* ON NE TOUCHE PAS    A1, D0 !!! 
+
+	*** HEADER
+	Cmp.l	#"LEGO",Prefs_HEADER(A1)
+	Bne	.FreeMem
+
+	*** VOLUME MUSIQUE
+	Clr.l	D1
+	Move.w	Prefs_MusicVol(A1),D1
+	Cmp.l	#64,D1	pour tester >64 et <0 en une fois
+	Ble.s	.OkV
+	Move.w	#35,D1	Erreur de valeur: valeur par défaut
+.OkV	Move.w	D1,MusicVol
+
+	*** VOLUME SONS
+	Clr.l	D1
+	Move.w	Prefs_SoundVol(A1),D1
+	Cmp.l	#64,D1	pour tester >64 et <0 en une fois
+	Ble.s	.OkV2
+	Move.w	#35,D1	Erreur de valeur: valeur par défaut
+.OkV2	Move.w	D1,SoundVol
+
+
+	*** MUSIQUE
+	Move.w	Prefs_Zik(A1),ActualZik
+	Move.w	ActualZik,MusicRequest
+
+	*** LEVELS
+	Lea	Prefs_LevelsSet(A1),A2	0:ok -1:pas autorisé
+	Movea.l	A2,A4
+	Adda.w	#Prefs_LevelsSet_END-Prefs_LevelsSet,A4		Test1
+	Clr.l	D1
+	Lea	Levels,A3
+	Lea	LevelsEnd,A5				Test2
+.LoopZ1	Cmpa.l	A3,A5	Test limite nombre levels application
+	Ble.s	.EndLZ1	
+	Clr.l	D1
+	Cmpa.l	A2,A4	Test limite fichier prefs
+	Blt.s	.EndLZ1	
+	Move.b	(A2)+,D1
+	Beq.s	.LOk1
+	Moveq	#-1,D1
+.LOk1	Move.l	D1,4(A3)
+	Adda.w	#8,A3
+	Bra.s	.LoopZ1	
+.EndLZ1	
+	
+	*** POINTEURS MENUS
+	Lea	Prefs_MenusPtr(A1),A2
+	Lea	MenusPtr,A3
+.LoopPR	Move.l	(A2)+,D2
+	Move.l	4(A3),D3
+	Beq.s	.EndLPR
+	Add.l	D3,D2
+	Move.l	D2,(A3)
+	Adda.w	#8,A3
+	Bra.s	.LoopPR
+.EndLPR	
+	* 8 octets/ptr: Mode,Zone,Mdejue,Mode players,Controls,Def
+
+	Jsr	Verif_Pointeurs_Menu
+
+	*** DEGRADES MENUS
+	Move.w	Prefs_DegradeMenuA(A1),D1
+	Jsr	NextDegrade		(Grafx.i)
+	Move.w	D1,DegradeMenuA
+	*Bsr	NextDegrade	Pour 2 dégradés différents
+	Move.w	D1,DegradeMenuB
+
+
+	********************
+.FreeMem	Jsr	_LVOFreeMem(A6)	(A1/D0)
+	Bra.s	.EndPrefs
+.DefaultPrefs
+	Move.w	#35,MusicVol		<--- Dans Prefs
+	Move.w	#64,SoundVol
+	Clr.w	MusicRequest
+	Move.w	#0,DegradeMenuA
+	Move.w	#0,DegradeMenuB
+
+	* Pas d'init des levels, ils sont à 0 de façon normale
+
+	****** INITIALISATION DES POINTEURS DE MENUS
+	Lea	MenusPtr,A3
+.LoopIni	Move.l	4(A3),D2
+	Beq.s	.EndLIni
+	Move.l	D2,(A3)
+	Adda.w	#8,A3
+	Bra.s	.LoopIni
+.EndLIni
+.EndPrefs
+	Move.w	SoundVol,SoundVolGen
+
+
+	**********************	Réservations de mémoire
+
+	Clr.l Quit_ERRORCODE	0: Erreur mémoire
+	InitMemStack
+	ResMemStack	#20000,#Chip,CopList1,ErrMem
+	ResMemStack	#SizePlan*(NbPlans+1+1)*2,#Chip,Planar,ErrMem
+	ResMemStack	#SizePlanBarre2*NbPlansBarre2,#Chip,Barre2,ErrMem
+	ResMemStack	#Bomb_SizeOf*MaBomb,#Public,BombPtr,ErrMem
+	ResMemStack	#Flam_SizeOf*MaBomb*4,#Public,FlamPtr,ErrMem
+	ResMemStack	#SizeDimLittle,#Public,Dim1,ErrMem	
+	ResMemStack	#SizeDimLittle,#Public,Dim2,ErrMem	
+	ResMemStack	#SizeDimLittle,#Public,Dim3,ErrMem	
+	ResMemStack	#SizeDim*4,#Public,Dim4,ErrMem	64K!
+	ResMemStack	#SizeDimLittle,#Public,Dim5,ErrMem	
+	ResMemStack	#SizeDimLittle,#Public,Dim6,ErrMem	
+	ResMemStack	#SizeDimLittle,#Public,Dim7,ErrMem
+	ResMemStack	#SizeDimIA1,#Public,DimIA1,ErrMem
+	ResMemStack	#SizeDimIA2,#Public,DimIA2,ErrMem
+	ResMemStack	#SizeDimIA3,#Public,DimIA3,ErrMem
+	*ResMemStack	#SizeDimIA4,#Public,DimIA4,ErrMem
+	ResMemStack	#Leg_SizeOf*NbJoueurs,#Public,LegoPtr,ErrMem	
+	ResMemStack	#SizePlan*NbPlans,#Public,FontPtr,ErrMem
+	ResMemStack	#MaMur*Mur_SizeOf,#Public,MurPtr,ErrMem
+	ResMemStack	#MaTele*Tele_SizeOf,#Public,TelePtr,ErrMem
+	ResMemStack	#MaBumper*Bumper_SizeOf,#Public,BumperPtr,ErrMem
+	ResMemStack	#128*2,#Public,ClavierPtr,ErrMem   Actif (-1)
+	ResMemStack	#4096,#Public,BobBackPtr,ErrMem
+	*ResMemStack	#SizeDimIA45,#Public,DimIA4,ErrMem
+	*ResMemStack	#SizeDimIA45,#Public,DimIA5,ErrMem
+
+	*** Chargement de tous les fichiers "résidents"
+	*
+	Lea	FilesList,A2
+.LoopF	Move.l	(A2)+,D1		Type de mémoire (Memf_Chip...)
+	Movea.l	(A2)+,A0		Nom du fichier
+	Move.l	A0,Quit_ERRORCODE	Erreur de fichier...
+	Tst.l	A0
+	Beq.s	.LoopFFin
+	Move.l	A2,-(A7)
+	Jsr	ChargeFichier	A0/D1 -> A1/D0
+	Move.l	(A7)+,A2
+	Movea.l	(A2)+,A3		Adresse pointeur fichier
+	Tst.l	A3
+	Beq.s	.LoopFFin		Eviter tout genre d'erreurs
+	Tst.l	D0
+	Beq	ErrMem		Longueur 0: erreur de chargement!
+	Move.l	A1,(A3)
+	Move.l	D0,D7	Taille	
+	Move.l	A1,D0	Adresse
+	Jsr	AddStack		pour rendu de mémoire automatique
+	Bra.s	.LoopF
+.LoopFFin	Clr.l	Quit_ERRORCODE
+
+
+	Jsr	LoadLevels
+	
+
+	***
+	*
+	Clr.l	SAUVEPTR
+	Clr.w	ExeSauveScreen
+	Move.l	CopList1,A0
+	Adda.w	#10000,A0
+	Move.l	A0,CopList2
+	* +sizeplanbarre*6
+	ResMemStack	#SizePlan*7,#Fast,SAUVEPTR,.NoFast
+	Move.w	#-1,ExeSauveScreen	Autorisation capturer écran
+.NoFast
+
+
+
+*** Chargement du fichier Levels
+
+
+*** Inits de l'interruption CLAVIER
+
+	Move.l	#CHEAT_SEQUENCE,CHEAT_PTR
+
+*** Installation de l'interruption CLAVIER
+
+	Move.l	ClavierPtr,A0	ClavierPtr: Touche ON/OFF
+	Clr.w	SomClav		(Mise à 1 à la main, 0 auto)
+	Moveq	#128*2/4-1,D0
+ClrClav	Clr.l	(A0)+
+	Dbf	D0,ClrClav
+	Move.l	$4.w,A6
+	Moveq	#3,D0		Clavier
+	Lea	Int2,A1	
+	Jsr	_LVOAddIntServer(A6)  
+
+
+*** Inits des RND
+		
+	Move.l	$dff004,D0	Long word (X,Y) Raster
+	Ror.l	#1,D0
+	Move.l	D0,D1
+	Ror.l	#3,D1
+	And.l	#%111,D1
+	Movem.l	D0-D1,MemRnd1
+
+*** Chargement des images
+
+	Move.l	#-1,DO_NOT_RETAKE_SYSTEM
+	Move.l	#163840,ORIGINAL_SIZE
+	Moveq	#0,D0		On charge tout si on peut
+	Jsr	ChargeCRP		Fichier compacte
+
+	Moveq	#1,D0
+	Jsr	ChargePic
+	Moveq	#2,D0
+	Jsr	ChargePic
+	Move.l	#0,DO_NOT_RETAKE_SYSTEM
+
+*** Copie de l'écran de bois
+
+	Bsr	BClearBois
+
+*** Initialisations
+
+	Move.l	#BarBackup,BarrePtr		à afficher
+	Move.l	#BarBackup,BarrePtrW	Source à copier
+	Clr.l	AdrSprites
+	Clr.l	SpritesLength
+	Clr.l	AdrSprites8
+	Clr.l	Sprites8Length
+	Clr.l	BarreDecounter	Si >0: restauration n'importe quand !
+	Clr.l	MemBIGError
+	Clr.l	CHEAT_ENABLED
+	Clr.w	SurvivorMode
+	Clr.w	Anim_Type
+	Move.l	#Winning_List,Anim_Act0
+	Move.l	#Egalite_List,Anim_Act1
+
+	Move.w	#Flam_VNormal,Flam_VAct
+
+	Move.l	#Levels,LevelsAdr
+
+
+*** On attend un peu...
+
+	WaitHard	#25
+
+*** Arrêt du systéme	
+
+
+	Moveq	#1,D0	Mettre une barre au pif (0=Indiv,2=Teams)
+	Jsr	SetOneBarreJ
+
+	Move.l	#0,SYSTEM_RESIDENT
+	Jsr	TakeSystem
+	Move.w	#0,$DFF180
+	Jsr	SetCopList
+	
+*** Musique
+
+	Moveq	#1,D0
+	Move.w	D0,Voice0Free
+	Move.w	D0,Voice1Free
+	Move.w	D0,Voice2Free
+	Move.w	D0,Voice3Free
+	
+	IFNE	Music_Activation
+	Lea	Musiques,A0
+	Moveq	#7,D0
+.LoopM	Clr.l	(A0)+		Init des adresses et tailles des
+	Clr.l	(A0)+		musiques.
+	Adda.w	#8,A0
+	Dbf	D0,.LoopM
+	ENDC
+
+*** Initialisations Pré-Interrupt
+
+	Clr.w	ExeGENERALVbl
+	Clr.w	ExeZik		Musique non autorisée 
+	Clr.w	ExeSprite		Gestion des joueurs idem
+	Clr.w	FadeBtw_Activate	Fading Off
+	Clr.w	ExeFlash		Pas de flashing
+	Clr.w	ExeLevel		Pas de décompteur de temps
+	Clr.w	ExeClavier	Pour UN test par VBL(si 0 bombes...)
+	*Clr.w	ExeBarSamples	Pour afficher jauge de chargement
+	Clr.w	Cycle_Activate
+
+*** Installation de l'interruption VBL
+	
+	Move.l	$4.w,A6
+	Moveq	#5,D0		Vbl
+	Lea	Int1,A1	
+	Jsr	_LVOAddIntServer(A6)  
+	Move.w	#-1,ExeGENERALVbl
+
+
+*** Installation de l'interruption COPPER
+	
+	Move.l	$4.w,A6
+	Moveq	#2,D0		Soft
+	Lea	Int7,A1	
+*	Jsr	_LVOSetIntVector(A6)  
+	Move.l	D0,OldIntSoft
+
+
+*** Installation des interruptions des SONS
+
+
+	Move.w	#0,ChannelUse3
+	Move.w	#-32768,ChannelPri3
+	Move.l	$4,A6		Son Channel 3
+	Moveq	#10,D0 
+	Lea	Int3,A1	
+	Jsr	_LVOSetIntVector(A6) 
+	Move.l	D0,OldIntSon3 
+
+	Move.w	#0,ChannelUse2
+	Move.w	#-32768,ChannelPri2
+	Move.l	$4,A6		Son Channel 2
+	Moveq	#9,D0		 
+	Lea	Int4,A1	
+	Jsr	_LVOSetIntVector(A6) 
+	Move.l	D0,OldIntSon2 
+
+	Move.w	#0,ChannelUse1
+	Move.w	#-32768,ChannelPri1
+	Move.l	$4,A6
+	Moveq	#8,D0		Son Channel 1 
+	Lea	Int5,A1	
+	Jsr	_LVOSetIntVector(A6) 
+	Move.l	D0,OldIntSon1
+	
+	Move.w	#0,ChannelUse0
+	Move.w	#-32768,ChannelPri0
+	Move.l	$4,A6
+	Moveq	#7,D0		Son Channel 0 
+	Lea	Int6,A1	
+	Jsr	_LVOSetIntVector(A6) 
+	Move.l	D0,OldIntSon0 
+
+	
+*** Defs Screen
+
+*	Move.w	#-1,ExeGENERALVbl
+*	Bsr	BIGTAKESYSTEM
+
+	OpenScreenHard
+	Jsr	SetScreenRegisters
+
+
+*** Init des pointeurs sur les SAMPLES
+
+	Lea	SonIdx,A0
+	Move.l	#SVide,D1
+	Moveq	#MaxSamples-1,D0
+.InitSmp	Move.l	D1,(A0)+
+	Dbf	D0,.InitSmp
+
+
+
+*********************************	MAIN
+
+
+ORCHESTRE				* INTRO + MENU
+	Bsr	ClsPl7
+	Clr.l	SamplesToKeep
+	Jsr	FreeSamples
+	Bsr	MakeMenuCopList
+	Jsr	INTRO
+	Jsr	MENU
+	Bsr	ClsBAR
+	Bsr	GAME_INITS
+	Bsr	RestoreCopList
+	Bra	SUITEO
+ORCHESTRE2			* JUSTE LE MENU
+	*Clr.w	ExeBarSamples
+	*Jsr	Set3		Pour les retours au jeu
+	*Bsr	BClearBois	idem
+	*Clr.l	BarreDecounter	Pour anti restauration pendant menu
+	Bsr	END_GAME_INITS
+
+	Jsr	FreeSpritesData
+	Moveq	#8,D0
+	Bsr	PaletteInit
+	Bsr	ClsPl7
+	Clr.l	SamplesToKeep
+	Jsr	FreeSamples
+	Bsr	MakeMenuCopList
+	Bsr	ClsALL
+	Jsr	MENU
+	Bsr	ClsBAR
+	Bsr	GAME_INITS
+	Bsr	RestoreCopList
+	Bra	SUITEO
+
+MakeMenuCopList
+	*******************   INITS INTRO-MENU
+	Clr.w	ExeSprite
+	Clr.w	ExeFlash
+	Clr.w	ExeLevel
+	Movea.l	CopEndPtr,A0	On a droit à 4 instructions
+	CopWaitXY	#440,#255		#448
+	CopWait	#34		et pas 28-YOFFNEG
+	Movea.l	CopBarrePtr,A0
+	CopEnd
+	Move.l	CopAdrBplCon0,A0
+	CopMove	#%0111001000000001,#$100	BplCon0: 7 plans (menus)
+	*******************
+	RTS
+
+RestoreCopList
+	*******************	  ON RESTAURE TOUTE LA COPPERLIST
+	Movea.l	CopEndPtr,A0	
+	CopWaitXY	#440,#255		#448
+	CopWait	#28-YOFFNEG
+	Movea.l	CopBarrePtr,A0	
+	CopMove	#$3081-$60,#$8E		Diw
+	Move.l	CopAdrBplCon0,A0
+	CopMove	#%0111001000000001,#$100	BplCon0: 7 plans (jeu)
+	*******************
+	RTS
+
+ClsPl7	Movea.l	Planar,A2
+	Adda.l	#6*SizePlan,A2
+	Move.w	#SizePlan/4-1,D0
+.EffScr	Clr.l	(A2)+
+	Dbf	D0,.EffScr
+	RTS
+
+ClsALL
+	Movea.l	Planar,A0		On efface TOUT l'écran
+	Move.l	#SizePlan,D0	
+	Moveq	#7,D1	nbPlans
+	Bsr	CLS
+	RTS
+
+
+************* Initialisations à faire seulement en sortie de menu
+*
+*
+GAME_INITS	
+	Clr.w	NbCreated
+	Clr.w	ModeAct		SEULE initialisation mode 4/6 joueurs
+	Bsr	PrepStats		Pour initialiser les statistiques
+	Bsr	DefWhichBar	Choisir en fonction prefs
+	*Bsr	CopyBarre		Pour faire propre un minimum
+	Clr.w	RequestForClearBois
+	Jsr	InitsDontMove
+	Move.w	#10,GamesSincePodium
+	Move.w	#1,ValRoutageAct
+	RTS
+
+************* A faire absolument en début de menu ou de podium
+*
+*
+END_GAME_INITS
+	*Clr.w	ExeBarSamples
+	Jsr	Set3		Pour les retours au jeu
+	Bsr	BClearBois	idem
+	Clr.l	BarreDecounter	Pour anti restauration pendant menu
+	RTS
+
+
+
+SUITEO
+	******************************
+	*Move.l	#-1,PALETTE_IN_PROGRESS
+	*Lea	PalJauge,A0
+	*Move.l	#128,D0
+	*Clr.l	D7
+	*Jsr	MakePaletteNew
+	*Clr.l	PALETTE_IN_PROGRESS
+
+	******************* Barre état samples VIDE
+	Move.l	Planar,A2
+	Move.w	#Jauge_Gris,D6
+	Moveq	#6,D7
+	Move.w	#XJaugeSamples,D0
+	Move.w	#YJaugeSamples,D1
+	Move.w	#XJaugeSamples+LargJaugeSamples,D2
+	Move.w	#YJaugeSamples+HautJaugeSamples,D3
+	Bsr	BAR	
+	*********
+
+	Clr.l	MessageWait
+	Move.l	#MessageWait,MessageWaitPtr
+	Move.w	SoundVolGen,SoundVol	Restauration prefs user
+
+	Clr.w	ExeSprite
+	Bsr	ClearSprites
+	WaitHard	#30
+	DMAClr	Sprite
+	
+	Move.l	#-1,DO_NOT_RETAKE_SYSTEM	*** NE RIEN RECOUPER
+
+	Clr.w	JaugeCpt
+	*Move.w	#-1,ExeBarSamples
+
+	****** Sprites!		VITAL !!!!!
+	Jsr	LoadSpritesData
+	Tst.l	AdrSprites
+	Ble.s	.ErrChip
+	Tst.l	AdrSprites8
+	Bgt.s	.OkSpr	
+.ErrChip	Move.l	#MsgErrSprite,MemBIGerror
+	BRA	ORCHESTRE2	ON BOUCLE SUR LE MENU
+	
+.OkSpr
+	****** Podium!	Si assez de mémoire, on le charge avant
+	Moveq	#3,D0	de commencer le jeu. Sinon il sera chargé
+	Jsr	ChargePic		avant d'être affiché...
+	Add.w	#2,JaugeCpt
+	Jsr	LoadingJaugeMAJ
+	
+	****** Samples!	Le plus important sur les sytèmes low-memory:
+	Jsr	LoadSamples	les sons !
+	*Clr.w	ExeBarSamples
+
+	****** Music!
+	IFNE 	Music_Activation
+	 Move.w	ActualZik,MusicRequest	
+
+	Move.l	MenuPtrOptA0,D0
+	Sub.l	#Opt_Arena1,D0	Mode dynablaster ?
+	Lsr.w	#2,D0
+	Cmp.w	#3,D0
+	Bne.s	.OkM
+	Move.w	#1,MusicRequest		Musique Dynablaster défaut
+
+.OkM	 Moveq	#-1,D0
+	 Move.l	#-1,ONLY_LOAD_ZIK
+	 Jsr	LaunchZik
+	ENDC
+
+	Move.w	#JaugeNbElements,JaugeCpt
+	Jsr	LoadingJaugeMAJ
+
+	Clr.l	DO_NOT_RETAKE_SYSTEM	Autorisation recouper
+	Jsr	TEMP_TAKE_SYSTEM
+
+	*WaitHard	#3		30 ???
+	VblWait	#30
+	DMASet	Sprite
+	Bsr	ClsAll
+
+	******************************
+
+
+	Move.l	MenuPtrOptA2,D0	MODE 5 WIN/FREE
+	Sub.l	#Opt_ModeJ1,D0
+	Lsr.w	#2,D0	D0: N° choix (0=Free/1=5 Match)
+	Move.w	D0,GameMode
+
+	Move.l	MenuPtrOptP0,D0	MODE EQUIPE
+	Sub.l	#Opt_ModeP1,D0
+	Lsr.w	#2,D0	D0: N° choix (0=Individual/1=Teams/2=Survivor)
+	Move.w	D0,PlayerMode
+	Clr.w	SurvivorMode
+	Cmp.w	#2,D0	
+	Bne.s	.NoS
+	Move.w	#-1,SurvivorMode
+.NoS
+
+	Move.l	MenuPtrOptA0,D0	MODE DE JEU: RANDOM ...
+	Sub.l	#Opt_Arena1,D0
+	Lsr.w	#2,D0		N° Mode (0=random,seq,one,dyna)
+	Move.w	D0,LevelMode
+
+	*** On met le level pour le mode ONE Level et SEQUENTIAL
+	Move.l	MenuPtrOptA1,D1
+	Sub.l	LevelsAdr,D1
+	Lsr.w	#3,D1			
+	Move.w	D1,NLevel
+	Move.l	MenuPtrOptA0,D0
+	Sub.l	#Opt_Arena1,D0	Mode dynablaster ?
+	Lsr.w	#2,D0
+	Cmp.w	#3,D0
+	Bne.s	.SuitIn
+	Move.w	#-1,NLevel	Oui: On met level=-1
+.SuitIn	
+
+
+*** Palette
+
+	Move.l	#-1,PALETTE_IN_PROGRESS	
+	*Movea.l	ColPalette,A0
+	Lea	Palette,A0
+	Move.l	#64+32,D0
+	Clr.l	D7
+	Jsr	MakePaletteNew
+	Clr.l	PALETTE_IN_PROGRESS
+
+*** Hard
+
+	Move.w	#%0000001000111111,BplCon2	Kill EHB+ Priorités Sprites
+	Move.w	#%0110001000000000,BplCon0	hires,nb bitplans,64c,dual,couleur,genlock,0000,lpen,lace,synchro ext,0
+	DMASet	BitPlan|Copper|Sprite
+
+*** Initialisations
+
+	Move.l	#XDecal*8,XAff
+	Move.l	#YDecal,YAff
+	Move.l	#YDecal*SizeLine+XDecal,RenderBase	
+
+	Move.l	SprIndex,AdrIndex
+	Move.l	SprIndex8,AdrIndex8
+	Move.w	#1,Son_Activated
+	Clr.w	WaitHardTime
+	Clr.w	WaitVol
+	Clr.w	WaitVol2
+	Clr.w	RequestForNewLevel
+	Clr.w	RequestForNewBar
+	Clr.w	RequestForPodium
+	Clr.l	Victoires		6 joueurs: 12 octets
+	Clr.l	Victoires+4
+	Clr.l	Victoires+8
+	Clr.l	VictoiresEq	2 équipes: 4 octets
+	Move.w	#1,LevelInfoState
+	Clr.w	TypTouche
+		
+	***** Flash
+	Move.l	#$00FFFF,Flash_Coul1
+	Move.l	#$0000FF,Flash_Coul2
+	Move.w	#63,Flash_CoulNumber
+	Clr.w	Flash_Cpt
+	Move.w	#-1,ExeFlash
+	*****
+INITS0
+	***** Music!
+	IFNE 	Music_Activation
+	 Moveq	#-1,D0
+	 Jsr	LaunchZik
+	 Move.w	MemZik,ActualZik
+	ENDC
+	*******
+
+INITS	*** On met le level pour tous les modes sauf "1 Level"
+	Jsr	RestoreMainBox
+
+	Move.w	LevelMode,D0
+	Bne	.No0		
+
+	***************** RANDOM
+* On teste d'abord pour savoir si on doit générer un nouveau level
+	Tst.w	TypTouche
+	Bgt.s	.RGen			>0: Regénère
+	Beq	.SuitIn			=0: Même
+	Move.w	NLevelPrev,NLevel		<0: Précédent
+	Bra	.SuitIn
+	**
+.RGen	Clr.l	D7
+	Move.l	LevelsAdr,A1		On compte, on fait RND
+.LoopCh	Move.l	(A1)+,D0
+	Beq.s	.EndLCh
+	Cmp.w	#1,PlayerMode	1:Team
+	Beq.s	.AlLevels
+
+	Move.l	#NbLevelsParWorld,D5
+	Mulu.w	#2*4*5,D5		(2 .L par level pour 5 mondes de .. Lvl)
+	Add.l	#Levels,D5
+	Cmp.l	D5,A1
+	*Cmp.l	#LevelF01,D0	Seulement mode teams
+	Beq.s	.EndLCh
+.AlLevels	Tst.l	(A1)+
+	Bne.s	.LoopCh
+	Addq.w	#1,D7		Un level de plus....		
+	Bra.s	.LoopCh
+.EndLCh	Tst.w	D7
+	Beq	.No0		Séquentiel puisque erreur...
+
+	Movem.l	MemRnd1,D0-D1
+	Jsr	Rnd_Engine
+	Movem.l	D0-D1,MemRnd1
+	And.l	#$0FFF,D0
+	Divu.w	D7,D0	
+	Swap	D0
+	* On a D0 = 0-(N-1)
+	* Maintenant il faut trouver le Nième N° libre....
+	* Si c bon, pas de plantage, donc on arrive jamais au bout !
+
+	Move.l	LevelsAdr,A1
+	Suba.w	#8,A1
+	Moveq	#-1,D7
+.LoopC2	Adda.w	#8,A1
+	Addq.w	#1,D7
+	Tst.l	4(A1)
+	Bne.s	.LoopC2
+	Dbf	D0,.LoopC2	
+
+	Move.w	NLevel,NLevelPrev	
+
+	Move.w	D7,NLevel			
+
+	Bra.s	.SuitIn
+.No0
+	Move.w	NLevel,D5
+	Cmp.w	NLevelPrev,D5
+	Beq.s	.NoAffec
+	Move.w	NLevel,NLevelPrev	
+.NoAffec	
+	***************** SEQUENTIAL
+	Cmp.w	#1,D0
+	Bne.s	.No1
+	Move.w	#500,D5	<--- Sécurité pour éviter boucle infinie
+	Move.w	NLevel,D0
+.RecNex	Dbf	D5,.Dec
+	Bra	ORCHESTRE2	Erreur: on revient au menu
+.Dec	Addq.w	#1,D0
+	Move.l	LevelsAdr,A1
+	Lea	(A1,D0.w*8),A1
+	Tst.l	(A1)		Pointeur sur menu = 0...
+	*Beq.s	.Loop
+	Beq.s	.RecNex
+	Tst.l	4(A1)
+	Bne.s	.RecNex
+	Move.w	D0,NLevel
+	Bra.s	.SuitIN	
+.Loop	Move.w	#-1,D0
+	Bra.s	.RecNex
+.No1
+	***************** DYNABLASTER
+	Cmp.w	#3,D0
+	Bne.s	.No3
+	Move.w	#-1,NLevel
+	Jsr	DynaInit
+	Bra	.SuitIn	
+
+.No3
+	***************** 
+.SuitIn	
+
+INITS2
+	Move.w	NLevel,D1
+	Blt.s	.NopLvl1		Dyna = -1
+	Lsl.w	#3,D1
+	Add.l	LevelsAdr,D1
+	Move.l	#LevelsEnd-8,D0
+	Sub.l	D1,D0
+	Blt	ORCHESTRE2	Erreur de pointeur de level
+.OkIni2A	Move.l	D1,MenuPtrOptA1
+.NopLvl1
+	Clr.w	ExeSprite
+	WaitHard	#1
+	VblWait	#32	>=30 
+	Clr.l	PlanAct
+	Jsr	ClearDims
+	Movea.l	ClavierPtr,A0
+.quit	Jsr	InitLevel		Retour: RequestForNewLevel=-1:ERREUR
+
+	Tst.w	SamplesWait	Afficher le nombre de samples ?
+	Beq.s	.NoSWP
+	Clr.w	SamplesWait
+	Move.w	SamplesTotal,D0
+	Sub.w	SamplesLoaded,D0
+	Beq.s	.NoSWP	On affiche que si Sons chargés < Sons au total
+	Bsr	BAffNbSamples
+.NoSWP
+
+*****	PROGRAMME PRINCIPAL (Impressionant non ?)
+	
+Main	
+	*Bra	Orchestre2
+
+	Tst.w	RequestForNewLevel
+	Blt	INITS
+
+	**** Tests Clavier qui peuvent engendrer des BRA ou JMP
+
+	Tst.w	ExeClavier
+	Beq	.NoTouche
+	Clr.w	ExeClavier	
+	Tst.w	SomClav
+	Beq	.NoTouche
+	Movea.l	ClavierPtr,A0
+	Tst.b	69(A0)	Escape
+	Bne	.Quit
+	*
+	Tst.b	70(A0)	Del
+	Beq.s	.NoDel
+	Jsr	Set4
+	Move.l	#Seconde*TimeBarre2Del,BarreDecounter		
+.NoDel
+	*
+*	Tst.b	51(A0)	C comme couleur
+*	Beq.s	.NoCoul
+*	Move.w	#49,Number
+*	Move.l	#$00FFFFFF,RGB
+*	Jsr	Colour
+*.NoCoul	
+
+	******
+	* Tests de toutes les touches déclenchant un BRA ou JMP
+	******
+	Tst.b	95(A0)	"Help"
+	Beq.s	.NoRec
+	Move.w	#0,TypTouche
+	Jsr	InitsDontMove
+	Bra	INITS
+.NoRec	*
+	Tst.b	80(A0)	"F1": Previous level
+	Beq.s	.NoPrev
+	Move.w	#-1,TypTouche
+	Move.w	NLevel,D0
+	Ble	.Rien
+.RecPr	Dbf	D0,.OkPrev
+	Bra	.Rien
+.OkPrev	Tst.w	D0
+	Blt	.Rien	Test sécurité
+	Move.l	LevelsAdr,A1
+	Tst.l	(A1,D0.w*8)	Level Free
+	Beq.s	.RecPr
+	Tst.l	4(A1,D0.w*8)	Level désactivé
+	Bne.s	.RecPr
+	Move.w	D0,NLevel	
+	Jsr	RestoreMainBox
+	Jsr	InitsDontMove
+	Bra	INITS		INITS2
+.NoPrev	Tst.b	81(A0)	"F2": Next level
+	Beq.s	.Rien
+	Move.w	#1,TypTouche
+	Move.l	MenuPtrOptA0,D0
+	Sub.l	#Opt_Arena1,D0
+	Lsr.w	#2,D0		N° Mode (0=random,seq,one,dyna)
+	Bne.s	.Normal
+	* Random
+	Jsr	InitsDontMove
+	Bra	INITS
+
+.Normal	Move.w	NLevel,D0
+	Blt.s	.Rien
+.RecNex	Addq.w	#1,D0
+	Move.l	LevelsAdr,A1
+	Lea	(A1,D0.w*8),A1
+	Cmpa.l	#LevelsEnd-8,A1
+	Bge.s	.Rien		<- nouveau test 2000 de limite
+	Tst.l	(A1)		Level Free
+	Beq.s	.RecNex
+	Tst.l	4(A1)		Level désactivé
+	Bne.s	.RecNex
+	Move.w	D0,NLevel
+	Jsr	RestoreMainBox
+	Jsr	InitsDontMove
+	Bra	INITS		INITS2
+.Rien	
+*	Tst.b	33(A0)		Touche "S" pour Slow du jeu
+*	Beq.s	.NoSlow
+*	Moveq	#5,D0
+*	Sub.w	WaitHardTime,D0	0 ou 5: balance
+*	Move.w	D0,WaitHardTime
+*.WhileS	Tst.b	33(A0)
+*	Bne.s	.WhileS		Attente relâchement pour pas swapper...
+*.NoSlow
+
+.NoTouche
+	**** Appels de Gestion
+
+	Jsr	Gestion
+
+	IFNE	DoubleBuffer_Activation
+	 Bsr	DoubleBuff
+	ENDC
+
+	IFNE	WaitHard_Activation	 
+	 Move.w	WaitHardTime,D0
+	 Beq.s	.NoWaitH
+.OuaHT	 Move.l	D0,-(A7)
+	 Jsr 	TesteTouchesCommunes
+	 Move.l	(A7)+,D0
+	 VblWait	#200
+	 VblWait	#220	 
+	 Dbf	D0,.OuaHT
+.NoWaitH	
+	ENDC
+	Jsr 	TesteTouchesCommunes
+
+	**** Bouclage
+	Bra	Main
+
+********************** On QUITTE LE JEU
+.Quit
+	Jsr	All_Mort	Pour les faire tous mourrir
+	Tst.w	D2	Nombre de morts
+	Beq.s	.PasUn	67 vues de mort !!!
+	WaitHard	#67
+.PasUn
+	Tst.w	GameMode
+	Bne.s	.NoFree
+	Cmp.w	#1,GamesSincePodium
+	Ble.s	.NoFree
+
+	Movea.l	LegoPtr,A0
+	Clr.l	D2	
+.Loop	Move.l	Leg_GamesPlayed(A0),D1
+	Cmp.l	#2,D1	au moins 2 partie(s) finie(s)
+	Bge.s	.Ok1
+	Adda.w	#Leg_SizeOf,A0
+	Addq.w	#1,D2
+	Cmp.w	#NbJoueurs,D2
+	Blt.s	.Loop
+	Bra.s	.NoFree
+.Ok1
+
+	Jsr	GosubAffPODIUM	Stats seulement mode Free play
+.NoFree	BRA	ORCHESTRE2	ON BOUCLE SUR LE MENU
+
+**********
+
+QUIT	*Move.w	#-1,ExeBarSamples
+	Jsr	FreeAllPics	Au cas où...
+
+*******************		On quitte le programme
+
+	Move.w	#$7fff,DmaCon
+	Move.w	#$7fff,IntEna
+
+
+***   Suppression de l'interruption COPPER
+
+	Move.l	$4.w,A6
+	Moveq	#2,D0		
+	Move.l	OldIntSoft,A1	
+*	Jsr	_LVOSetIntVector(A6)
+
+
+***   Suppression de l'interruption CLAVIER
+
+	Move.l	$4.w,A6
+	Moveq	#32,D0		
+	Lea	Int2,A1	
+	Jsr	_LVORemIntServer(A6)
+
+
+***   Suppression de l'interruption VBL
+
+	VblWait	#250
+	Move.l	$4.w,A6
+	Moveq	#32,D0		
+	Lea	Int1,A1	
+	Jsr	_LVORemIntServer(A6)
+
+
+***   Suppression des interruptions SONS
+
+	Move.l	$4,A6
+	Moveq	#10,D0		Son 3
+	Move.l	OldIntSon3,A1	
+	Jsr	_LVOSetIntVector(A6) 
+
+	Move.l	$4,A6
+	Moveq	#9,D0		Son 2
+	Move.l	OldIntSon2,A1	
+	Jsr	_LVOSetIntVector(A6) 
+
+	Move.l	$4,A6
+	Moveq	#8,D0		Son 1
+	Move.l	OldIntSon1,A1	
+	Jsr	_LVOSetIntVector(A6) 
+
+	Move.l	$4,A6
+	Moveq	#7,D0		Son 0
+	Move.l	OldIntSon0,A1	
+	Jsr	_LVOSetIntVector(A6) 
+
+
+	
+***   Suppression de la musique
+
+	IFNE	Music_Activation
+	 Clr.w	MusicRequest
+	 Moveq	#0,D0		Arrêt zik + rend memoire
+	 Jsr	LaunchZik
+	ENDC
+
+
+
+***   Réactivation des copper-list systéme
+
+	CloseScreenHard
+
+***   Remise en route du systéme
+
+*	IntOn
+*	Move.l	$4.w,A6
+*	Jsr	_LVOPermit(A6)
+
+	Jsr	RestoreSystem
+
+	Move.w	#$8180,DMACon	screen,copper ON
+	Move.w	#$000F,DMACon	Couper son
+
+	WaitHard	#5
+
+	Move.l	#-1,SYSTEM_RESIDENT
+
+***   Sauvegarde des fichiers debug
+
+	Tst.w	ExeSauveScreen
+	Beq.s	.NoSav
+	Move.l	SauvePtr,SaveAdr
+	Move.l	#7*SizePlan,SaveSize
+	Move.l	#NomSauve,SaveName
+	Bsr	SaveRoutine
+.NoSav
+
+*** Sauvegarde du fichier Préférences
+
+
+PrefsW	ResMemStack #Prefs_SIZEOF,#Public,A1,ErrMem
+	*
+	**********		INIT VALEURS
+	*
+	Move.l	#"LEGO",Prefs_HEADER(A1)	HEADER
+	Move.w	MusicVol,Prefs_MusicVol(A1)	VOLUME MUSIQUE
+	Move.w	SoundVol,Prefs_SoundVol(A1)	VOLUME SONS
+	Move.w	ActualZik,Prefs_Zik(A1)	MUSIQUE (dernière musique)
+	Lea	Prefs_LevelsSet(A1),A2	LEVELS
+	Movea.l	A2,A4
+	Adda.w	#Prefs_LevelsSet_END-Prefs_LevelsSet,A4	
+	Clr.l	D1		
+	Move.l	LevelsAdr,A3
+	Movea.l	#LevelsEnd,A5
+.LoopZ1	Cmpa.l	A3,A5		Test Nb Levels dans application
+	Ble.s	.EndLZ1		
+	Adda.w	#4,A3
+	Move.l	(A3)+,D1
+	Sne	D1	Pour avoir Word_droite(D1) à -1 si D1<>0	
+	Cmpa.l	A2,A4		Test place dispo dans fichier Prefs
+	Ble.s	.EndLZ1			
+	Move.b	D1,(A2)+
+	Bra.s	.LoopZ1	
+.EndLZ1	Jsr	Verif_Pointeurs_Menu
+	Lea	Prefs_MenusPtr(A1),A2	POINTEURS MENUS
+	Lea	MenusPtr,A3
+.LoopPR	Move.l	(A3)+,D2
+	Move.l	(A3)+,D3
+	Beq.s	.EndLPR
+	Sub.l	D3,D2
+	Bge.s	.OkPR			Vérif antibug
+	Clr.l	D2
+.OkPR	Move.l	D2,(A2)+
+	Bra.s	.LoopPR
+.EndLPR	Move.w	DegradeMenuA,Prefs_DegradeMenuA(A1)	DEGRADES
+	Move.w	DegradeMenuB,Prefs_DegradeMenuB(A1)
+	*
+	*********			SAUVE PREFS
+	*
+	Move.l	#FichConfig,SaveName
+	Move.l	A1,SaveAdr
+	Move.l	#Prefs_SIZEOF,SaveSize
+	Bsr	SaveRoutine
+
+	**** 			SAUVE DEBUG
+
+	Move.l	Dim2,SaveAdr	Tableau
+	Move.l	#NomDebug2,SaveName
+	Move.l	#64*64*SizeStructure,SaveSize
+	Bsr	SaveRoutine
+
+	Move.l	DimIA1,SaveAdr	Tableau
+	Move.l	#NomDebugIA1,SaveName
+	Move.l	#SizeDimIA1,SaveSize
+	Bsr	SaveRoutine
+
+	Move.l	DimIA2,SaveAdr	Liste de points
+	Move.l	#NomDebugIA2,SaveName
+	Move.l	#SizeDimIA2,SaveSize
+	Bsr	SaveRoutine
+
+	Move.l	DimIA3,SaveAdr	Danger Colonnes-Lignes
+	Move.l	#NomDebugIA3,SaveName
+	Move.l	#SizeDimIA3,SaveSize
+	Bsr	SaveRoutine
+
+	Move.l	DimIA4,SaveAdr
+	Move.l	#NomDebugIA4,SaveName
+	Move.l	#SizeDimIA45,SaveSize
+	Bsr	SaveRoutine
+
+	Move.l	DimIA5,SaveAdr
+	Move.l	#NomDebugIA5,SaveName
+	Move.l	#SizeDimIA45,SaveSize
+	Bsr	SaveRoutine
+
+	**************************************
+ContMem	* Erreur de mémoire: on libère TOUTE la mémoire réservée
+
+	*** On libère la mémoire utilisée par les images	
+	Moveq	#MaxPictures-1,D1
+	Clr.l	D0
+.LoopFrP	Bsr	FreePic
+	Addq.w	#1,D0
+	Dbf	D1,.LoopFrP
+
+
+	***   Libération de la mémoire
+*ContMem
+	FreMemStack
+
+	*********
+	Jsr	BIG_ERROR
+	***
+
+	Move.l	$4.w,A6		PRINT
+	Lea	DosName,A1
+	Clr.l	D0
+	Jsr	-$228(A6)
+	Move.l	D0,DosBase
+	Beq	.ErrDos
+	Move.l	D0,A6
+	Jsr	_LVOOutPut(A6)
+	Move.l	D0,DefOutPut
+	Beq	.ClosDos	
+
+	********************
+
+	Lea	StrWork,A3
+
+	Move.l	TotalPlayingTime,D3
+	Divu.l	#Minute,D3
+	Lea	Msg4_Only,A0
+	Cmp.l	#7,D3	7 minutes mini pour joueur invétéré
+	Blt.s	.Cop1
+	Lea	Msg4,A0
+.Cop1	Move.b	(A0)+,D2
+	Beq.s	.EndC1
+	Move.b	D2,(A3)+
+	Bra.s	.Cop1
+.EndC1	
+.HOURS	***********
+	Move.l	#-1,SemaTime
+	Move.l	TotalPlayingTime,D3
+	Divu.l	#Heure,D3
+	Beq.s	.MINUTES
+	Clr.l	SemaTime	Minutes obligatoires : "5 hours," 
+	Lea	Msg4B2,A2
+	Cmp.l	#1,D3
+	Beq.s	.Cop3
+	Move.b	#" ",(A3)+
+	Moveq	#2,D6	chiffres		"1"
+	Clr.l	D7	Pas de remplissage
+	Jsr	STR	* Ne modifie pas : D0-D2/A0-A1/A3-A7
+.Cop2	Move.b	(A2)+,D2
+	Beq.s	.EndC2
+	Move.b	D2,(A3)+
+	Bra.s	.Cop2
+.EndC2	Lea	Msg4B,A2
+.Cop3	Move.b	(A2)+,D2
+	Beq.s	.EndC3
+	Move.b	D2,(A3)+
+	Bra.s	.Cop3
+.EndC3
+
+
+.MINUTES	***********
+	Move.l	TotalPlayingTime,D3
+	Divu.l	#Minute,D3
+	Ext.l	D3
+	Divu.w	#60,D3
+	Swap	D3
+	Ext.l	D3
+	*Tst.l	SemaTime
+	*Beq.s	.OkST2
+	Tst.l	D3
+	Beq.s	.SECONDS
+	Clr.l	SemaTime		0: on affiche les secondes
+.OkST2	Lea	Msg4C2,A2		one minute (singulier) 
+	Cmp.l	#1,D3
+	Beq.s	.Cop13
+	Move.b	#" ",(A3)+
+	Moveq	#2,D6	nb chiffres	
+	Clr.l	D7	Pas de remplissage à gauche
+	Jsr	STR	* Ne modifie pas : D0-D2/A0-A1/A3-A7
+.Cop12	Move.b	(A2)+,D2
+	Beq.s	.EndC12
+	Move.b	D2,(A3)+
+	Bra.s	.Cop12
+.EndC12	Lea	Msg4C,A2		MinuteS (pluriel)
+.Cop13	Move.b	(A2)+,D2
+	Beq.s	.EndC13
+	Move.b	D2,(A3)+
+	Bra.s	.Cop13
+.EndC13
+
+.SECONDS	***********
+	Move.l	TotalPlayingTime,D3
+	Divu.l	#Seconde,D3
+	Beq.s	.NoTime
+	Divu.w	#60,D3		On vire les minutes(donc heures)
+	Swap	D3
+	Ext.l	D3
+	*Tst.l	SemaTime
+	*Beq.s	.OkST
+	Tst.l	D3
+	Beq.s	.NoSc	Pour "You played 1 hour" 
+.OkST	
+	Tst.l	SemaTime
+	Bne.s	.EndC35
+	Lea	Msg4A,A2		"and"
+.Cop35	Move.b	(A2)+,D2
+	Beq.s	.EndC35
+	Move.b	D2,(A3)+
+	Bra.s	.Cop35
+.EndC35
+	Lea	Msg4D2,A2
+	Cmp.l	#1,D3
+	Beq.s	.Cop33
+	Move.b	#" ",(A3)+
+	Moveq	#2,D6	2 chiffres
+	Clr.l	D7	Pas de remplissage à gauche
+	Jsr	STR	* Ne modifie pas : D0-D2/A0-A1/A3-A7
+.Cop32	Move.b	(A2)+,D2
+	Beq.s	.EndC32
+	Move.b	D2,(A3)+
+	Bra.s	.Cop32
+.EndC32	Lea	Msg4D,A2
+.Cop33	Move.b	(A2)+,D2
+	Beq.s	.EndC33
+	Move.b	D2,(A3)+
+	Bra.s	.Cop33
+.EndC33
+.NoSc
+	Lea	Msg4E,A2		Copie avec le "0"
+.Cop34	Move.b	(A2)+,D2
+	Move.b	D2,(A3)+
+	Bne.s	.Cop34	
+	
+	Move.l	#StrWork,D2
+	Bsr	Print
+.NoTime
+
+	********************
+	
+.ClosDos	Move.l	$4.w,A6
+	Move.l	DosBase,A1
+	Jsr	-$19E(A6)
+.ErrDos
+	Clr.l	D0
+	RTS
+
+	***** Erreur de mémoire: on affiche ça...
+
+ErrMem
+	Move.l	$4.w,A6
+	Lea	DosName,A1
+	Clr.l	D0
+	Jsr	-$228(A6)		OpenDos
+	Move.l	D0,DosBase
+	Beq.s	.ErrDos
+	Move.l	D0,A6
+	Jsr	_LVOOutPut(A6)
+	Move.l	D0,DefOutPut
+	Beq.s	.ClosDos	
+	
+
+	Move.l	Quit_ERRORCODE,D0
+	Beq.s	.EC_Mem
+	
+	*** Erreur de chargement d'un fichier
+.EC_File	Move.l	#Err_Load,D2
+	Bsr	Print
+	Move.l	D0,D2
+	Bsr	Print
+	Bra.s	.EC_END
+
+	*** Erreur de mémoire
+.EC_Mem	Move.l	#Err_Mem,D2
+	Bsr	Print
+
+.EC_END	Move.l	#Err_END,D2
+	Bsr	Print
+
+.ClosDos	Move.l	$4.w,A6
+	Move.l	DosBase,A1
+	Jsr	-$19E(A6)
+
+.ErrDos	Bra	ContMem
+
+
+	***********	Print(D2:Adresse texte, DefOutPut: Handle)
+Print	Movem.l	D0-D1/D3/A0-A4,-(A7)
+	Move.l	DosBase,A6
+	Tst.l	A6
+	Beq.s	.ErrInit
+	Move.l	DefOutPut,D1		
+	Beq.s	.ErrInit
+	Bsr	.SearchLen
+	Jsr	_LVOWrite(A6)
+.ErrInit	Movem.l	(A7)+,D0-D1/D3/A0-A4
+	RTS
+.SearchLen Movea.l	D2,A2
+	Clr.l	D3
+.LenLoop	Tst.b	(A2)+
+	Beq.s	.LenLoopF		
+	Addq.l	#1,D3
+	Bra.s	.LenLoop
+.LenLoopF	Cmp.l	#4096,D3		Pour limiter les dégâts si bug !
+	Ble.s	.Ok
+	Clr.l	D3	
+.Ok	RTS
+	***********
+
+********************************************************
+*	 CLAVIER: TOUCHES SANS BRA ET SANS JMP       *
+********************************************************
+TesteTouchesCommunes
+
+	Tst.w	CHEAT_ENABLED
+	Beq	NoCheat
+	
+	Movea.l	ClavierPtr,A0	Tests vitesse flamme
+	Tst.b	55(A0)		,
+	Beq.s	.NoFl1
+	Move.w	#Flam_VNormal,Flam_VAct	
+.NoFl1
+	Tst.b	56(A0)		;
+	Beq.s	.NoFl2
+	Move.w	#Flam_VSpeed1,Flam_VAct	
+.NoFl2
+	Tst.b	57(A0)		:
+	Beq.s	.NoFl3
+	Move.w	#Flam_VSpeed2,Flam_VAct		
+.NoFl3
+	Tst.b	58(A0)		=
+	Beq.s	.NoFl4
+	Move.w	#Flam_VSpeed3,Flam_VAct		
+.NoFl4
+	Movea.l	ClavierPtr,A0	
+	Tst.b	33(A0)		Touche "S" pour Slow du jeu
+	Beq.s	.NoSlow	
+	Tst.b	128+33(A0)	mais tour précédent: faut qu'elle 
+	Bne.s	.NoSlow		ne soit pas appuyée	
+	Moveq	#5,D0
+	Sub.w	WaitHardTime,D0	0 ou 5: bascule
+	Move.w	D0,WaitHardTime
+.NoSlow	Move.b	33(A0),128+33(A0)
+
+	Movea.l	ClavierPtr,A0	"TAB": Capturer l'écran
+	Tst.b	66(A0)
+	Beq.s	.NoCaptur
+	Tst.b	128+66(A0)
+	Bne.s	.NoCaptur
+	Jsr	CaptureEcran	
+.NoCaptur	Move.b	66(A0),128+66(A0)
+
+
+NOCHEAT
+
+
+	Movea.l	ClavierPtr,A0
+	Tst.b	25(A0)	"P": Pause
+	Beq.s	.NoPause
+	Jsr	PAUSE
+.NoPause
+	Clr.w	Volume_Modif
+	IFNE	Music_Activation
+	 Tst.b	74(A0)		"-" (volume music -)
+	 Beq.s	.NoVMoins
+	 Move.w	WaitVol,D0
+	 Dbf	D0,.OkMvo
+	 Move.w	#2,D0
+.OkMvo	 Move.w	D0,WaitVol
+	 Bne.s	.NoVMoins
+	 Move.w	#-1,Volume_Modif	
+	 Move.w	P61_Master,D0
+	 Beq.s	.NoVMoins
+	 Subq.w	#1,D0
+	 Move.w	D0,P61_Master
+	 Move.w	D0,MusicVol
+	ENDC
+.NoVMoins	
+	IFNE	Music_Activation
+	 Tst.b	94(A0)		"+" (volume music +)
+	 Beq.s	.NoVPlus
+	 Move.w	WaitVol,D0
+	 Dbf	D0,.OkPvo
+	 Move.w	#2,D0
+.OkPvo	 Move.w	D0,WaitVol
+	 Bne.s	.NoVPlus
+	 Move.w	#-1,Volume_Modif	
+	 Move.w	P61_Master,D0
+	 Cmp.w	#64,D0
+	 Beq.s	.NoVPlus
+	 Addq.w	#1,D0
+	 Move.w	D0,P61_Master		
+	 Move.w	D0,MusicVol
+	ENDC
+.NoVPlus	
+	IFNE	Music_Activation
+	 Tst.b	92(A0)		"/" (volume sound -)
+	 Beq.s	.NoVMoinsS
+	 Move.w	WaitVol2,D0
+	 Dbf	D0,.OkMvoS
+	 Move.w	#2,D0
+.OkMvoS	 Move.w	D0,WaitVol2
+	 Bne.s	.NoVMoinsS
+	 Move.w	#-1,Volume_Modif	
+	 Move.w	SoundVol,D0
+	 Beq.s	.NoVMoins
+	 Subq.w	#1,D0
+	 Move.w	D0,SoundVol
+	 Move.w	D0,SoundVolGen
+ 	ENDC
+.NoVMoinsS	
+	IFNE	Music_Activation
+	 Tst.b	93(A0)		"*" (volume sound +)
+	 Beq.s	.NoVPlusS
+	 Move.w	WaitVol2,D0
+	 Dbf	D0,.OkPvoS
+	 Move.w	#2,D0
+.OkPvoS	 Move.w	D0,WaitVol2
+	 Bne.s	.NoVPlusS
+	 Move.w	#-1,Volume_Modif	
+	 Move.w	SoundVol,D0
+	 Cmp.w	#64,D0
+	 Beq.s	.NoVPlusS
+	 Addq.w	#1,D0
+	 Move.w	D0,SoundVol
+	 Move.w	D0,SoundVolGen
+	ENDC
+.NoVPlusS
+
+	Tst.w	Volume_Modif
+	Beq.s	.NoVChange
+	Bsr	BAffVols
+	Clr.w	Volume_Modif
+
+.NoVChange
+
+	IFNE	Music_Activation
+	 Moveq	#1,D0	Musique 1
+	 Tst.b	82(A0)
+	 Bne.s	.Zik		
+	 Moveq	#2,D0	Musique 2
+	 Tst.b	83(A0)
+	 Bne.s	.Zik	
+	 Moveq	#3,D0	Musique 3
+	 Tst.b	84(A0)
+	 Bne.s	.Zik
+	 Moveq	#4,D0	Musique 4
+	 Tst.b	85(A0)
+	 Bne.s	.Zik
+	 Moveq	#5,D0	Musique 5
+	 Tst.b	86(A0)
+	 Bne.s	.Zik	
+	 Moveq	#6,D0	Musique 6
+	 Tst.b	87(A0)
+	 Bne.s	.Zik	
+	 Moveq	#7,D0	Musique 7
+	 Tst.b	88(A0)
+	 Bne.s	.Zik	
+	 Moveq	#0,D0	Musique 0 (Off)
+	 Tst.b	89(A0)
+	 Bne.s	.Zik	
+	 Bra	.NoZik2
+.Zik	 Cmp.w	MusicInProgress,D0
+	 Beq	.NoZik2		Musique déjà en cours
+	 Move.w	D0,MemZikCh
+	 Jsr	LaunchZik
+	 Move.w	MemZik,ActualZik
+	*****************
+
+	Bsr	BAffNomMusique
+
+.NoZik2
+.NoBarreSwap
+	ENDC
+
+
+	RTS
+
+
+**************************************	ROUTINES	**********************
+
+**************************
+
+	Include	Feelings.i	Gestion des vues pour le podium
+	Include	Stats.i		Statistiques de fin de jeu
+	Include	Podium.i		Gestion du podium
+	Include	Barre.i		Barre d'état en bois
+	Include	System.i		Interruptions...
+	Include	View.i		...et Registres Hard
+	Include	Bumper.i		Gestion des ressorts
+	Include	Tele.i		Gestion Téléporteurs
+	Include	Murs.i		Gestion explosion murs
+	Include	Sprites.i		Gestion des joueurs
+	Include	Micro.i		Intelligence artificielle
+	Include	Bombes.i		Gestion des mouvements/anim bombes
+	Include	Flammes.i		Gestion des explosions
+	Include	GrafX.i		Routines Graphiques
+	Include	Son.i		Routines Sonores
+	Include	Intro.i		Introduction
+	Include	Menu.i		Menu du jeu
+	Include	Slide.i		SlideShow
+	Include	Rnd.i		Routine de hasard
+	Include	LoadFiles.i	Macro de chargement des sons+Sprites
+	Include	CodeAnnexe.i	Chargement les levels...
+	Include	Levels.i		Gestion des levels
+	Include	Int_VBL.i		Interrupt #1: VBL (la plus longue)
+	Include	Int_KEY.i		Interrupt #2: KeyBoard
+	Include	Int_SON.i		Interrupt #3,#4,#5,#6: DMA Sons
+	Include	Copper.i		Gestion des copper-listes
+	
+
+******************
+*
+* Mettre à 0 tous les DIMS
+*
+ClearDims
+	Move.l	Dim1,A0
+	Move.l	Dim2,A1
+	Move.l	Dim3,A2
+	Move.l	Dim4,A3
+	Move.l	Dim5,A4
+	Move.l	Dim6,A5
+	Move.l	Dim7,A6
+	Move.l	#SizeDimLittle/4-1,D0	/8 pour 32 de hauteur et pas 64
+.Loop	Clr.l	(A0)+
+	Clr.l	(A1)+
+	Clr.l	(A2)+
+	Clr.l	(A3)+	1 Dim4: 4 fois plus gros que les autres
+	Clr.l	(A3)+	2
+	Clr.l	(A3)+	3
+	Clr.l	(A3)+	4
+	Clr.l	(A4)+
+	Clr.l	(A5)+
+	Clr.l	(A6)+	
+	Dbf	D0,.Loop
+	Move.l	DimIA1,A0			Tableau de bombes
+	Move.w	#SizeDimIA1/4-1,D0
+.Loop2	Clr.l	(A0)+
+	Dbf	D0,.Loop2
+	Move.l	DimIA2,A0			Tableau de routage .W
+	Move.w	#SizeDimIA2/4-1,D0
+.Loop3	Clr.l	(A0)+
+	Dbf	D0,.Loop3
+	RTS
+
+*****************************************************************************
+
+
+
+	*****************	Restorer l'écran pour commencer le jeu
+	*
+	*
+RestoreMainBox
+	*	0:Attente -1:Affiché 1:Déjà effacé 2:Temp 3:A effacer
+
+	Move.w	LevelInfoState,D0
+	Beq.s	.nop
+	Cmp.w	#1,D0
+	Beq.s	.nop
+
+	Move.w	#1,LevelInfoState
+	Bsr	RestoreWorkingScreen
+	Move.w	#0,D0	X1
+	Move.w	#0,D1	Y1
+	Move.w	#319,D2	X2
+	Move.w	#250,D3	Y2
+	Move.w	#0,D6	C
+	Move.w	#1,D7	Pl
+	Movea.l	Planar,A2
+	Adda.l	#SizePlan*7,A2
+	Bsr	BAR	
+	Moveq	#4,D0
+	Bsr	PaletteRestore
+	Move.l	CopAdrBplCon0,A0
+	CopMove	#%0110001000000001,#$100	BplCon0: 6 plans
+.Nop	RTS
+
+
+
+	*************************
+AffichePhrase
+	** (D0-D1/A0-A1)
+	Movem.l	D0-D1/A0-A1,-(A7)	
+	Movea.l	Planar,A2
+	Addq.w	#2,D0
+	Addq.w	#2,D1
+	Move.w	#15,D2		15 : Noir
+	Moveq	#6,D7		6 plans
+	Move.l	#SizePlan,VarSizePlan
+	Move.l	#SizeLine,VarSizeLine
+	Bsr	GPrint	
+	Movem.l	(A7)+,D0-D1/A0-A1	
+	Movea.l	Planar,A2
+	Move.w	#30,D2		30 : Blanc
+	Moveq	#6,D7		6 plans
+	Move.l	#SizePlan,VarSizePlan
+	Move.l	#SizeLine,VarSizeLine
+	Bsr	GPrint	
+	RTS
+	*************************
+
+
+	*************************
+
+AffichePhraseBarre2
+	** (D0-D1/A0-A1)
+	Movem.l	D0-D1/A0-A1,-(A7)
+	Movea.l	Barre2,A2
+	Addq.w	#1,D0
+	Addq.w	#1,D1	
+	Move.w	#15,D2
+	Moveq	#6,D7		nb plans
+	Move.l	#SizePlanBarre2,VarSizePlan
+	Move.l	#SizeLine,VarSizeLine
+	Bsr	GPrint	
+	****
+	Movem.l	(A7)+,D0-D1/A0-A1
+	Movea.l	Barre2,A2
+	Move.w	#3,D2
+	Moveq	#6,D7		nb plans
+	Move.l	#SizePlanBarre2,VarSizePlan
+	Move.l	#SizeLine,VarSizeLine
+	Bsr	GPrint	
+	RTS
+	*************************
+
+
+
+
+	IFNE Music_Activation
+
+
+	***** Balarguer une musique
+	*
+	* D0: N° de la musique
+	*
+LaunchZik	Movem.l	D0-D7/A0-A6,-(A7)
+	Tst.w	D0		Pour désactiver request (menus)
+	Bge.s	.NoMReq
+
+	Tst.w	MusicRequest
+	Beq.s	.NoMReq
+	Move.w	MusicRequest,D0
+
+.NoMReq	Tst.w	D0		Anti-Bugs
+	Blt	.NoNewZik
+	Cmp.w	#NbMusics,D0
+	Bgt	.NoNewZik		
+	Move.w	D0,MemZik
+	Beq.s	.OkR
+	Cmp.w	MusicInProgress,D0
+	Beq	.NoNewZik
+.OkR	Tst.w	MusicInProgress
+	Beq.s	.NoZikIPAv
+	Clr.w	ExeZik
+	Movem.l	Sauve,D0-D7/A0-A6
+	Jsr	P61_End		P6
+	WaitHard	#1
+.NoZikIPAv
+	* On rend la mémoire qui A été allouée
+
+	Bsr	RendAllZikMem
+
+*	Move.w	MusicInProgress,D0
+*	Lsl.w	#4,D0	4.L = *16
+*	Lea	(Musiques,D0.w),A0
+*	Move.l	$4.w,A6
+*	Move.l	(A0),A1		MusicNPtr
+*	Move.l	4(A0),D0		MusicNLen
+*	Clr.l	(A0)+		ON EFFACE LES DECLARATIONS :
+*	Clr.l	(A0)		LA MUSIQUE N'EST >>PLUS<< EN MEMOIRE
+*	Jsr	_LVOFreeMem(A6)
+.NotInMem	
+.NoZikIP	Clr.w	MusicInProgress
+	*Move.l	#0,P61_Channels	PLANTE SI PAS DE FAST !!!!!!!
+	Moveq	#1,D1		
+	Move.w	D1,Voice3Free
+	Move.w	D1,Voice2Free
+	Move.w	D1,Voice1Free
+	Move.w	D1,Voice0Free
+	Move.w	MemZik,D0
+	Beq	.NoNewZik
+	Lsl.w	#4,D0
+	Lea	(Musiques,D0.w),A6
+
+	* Musique dans le disque: il faut la charger		
+	Move.l	2*4(A6),A1	Nom du fichier
+	Tst.l	A1
+	Beq	.NoNewZik		Ligne de musique vide
+	Move.l	(A6),A0		Test musique déjà en mémoire
+	Tst.l	A0
+	Beq.s	.InDisk
+	Tst.l	4(A6)
+	Bne.s	.InMem
+.InDisk	Movea.l	A1,A0
+	Move.l	#Chip,D1	
+	******
+	Movem.l	D2-D7/A2-A6,-(A7)
+	Jsr	TEMP_RESTORE_SYSTEM
+	Jsr	ChargeFichier 	A0/D1->A1/D0
+	Jsr	TEMP_TAKE_SYSTEM
+	Movem.l	(A7)+,D2-D7/A2-A6
+	*******
+	Movea.l	A1,A0		Pour utiliser cette nouvelle musique	
+	Tst.l	D0
+	Beq	.NoNewZik		ERREUR: on n'utilise pas cette musique
+	Move.l	A1,(A6)+		MusicNPtr
+	Move.l	D0,(A6)		MusicNLen
+	Tst.l	ONLY_LOAD_ZIK
+	Bne	.nonewzik
+.InMem	* A0: Adresse de la musique en mémoire
+	Move.w	#%0111,D1
+	Btst	#3,D1
+	Beq.s	.Util3
+	Clr.w	Voice3Free	Piste non usable pour les sons ? 0
+.Util3	Btst	#2,D1
+	Beq.s	.Util2
+	Clr.w	Voice2Free
+.Util2	Btst	#1,D1
+	Beq.s	.Util1
+	Clr.w	Voice1Free
+.Util1	Btst	#0,D1
+	Beq.s	.Util0
+	Clr.w	Voice0Free
+.Util0	
+	Moveq	#3,D1
+	Move.w	MemZik,D0
+	Cmp.w	#9,D0
+	Bne.s	.NoMenu
+	Moveq	#4,D1
+.NoMenu	Move.l	D1,P61_Channels
+	
+	Move.l	#0,A1
+	Move.l	#0,A2
+	Jsr	P61_Init
+
+	Tst.l	D0		D0=0:Ok
+	Bne.s	.NoNewZik		Erreur d'init
+	Movem.l	D0-D7/A0-A6,Sauve
+	Move.w	MusicVol,P61_Master
+	Move.w	MemZik,MusicInProgress
+	Move.w	#-1,ExeZik	Musique ON
+
+.NoNewZik	Movem.l	(A7)+,D0-D7/A0-A6
+	Clr.l	ONLY_LOAD_ZIK
+	RTS
+
+RendAllZikMem
+	Moveq.w	#NbMusics,D0
+.LoopRA
+	Move.l	D0,-(A7)
+	Lsl.w	#4,D0	4.L = *16
+	Lea	(Musiques,D0.w),A0
+	Move.l	$4.w,A6
+	Move.l	(A0),A1		MusicNPtr
+	Tst.l	A1
+	Beq.s	.NoZik
+	Move.l	4(A0),D0		MusicNLen
+	Clr.l	(A0)+		ON EFFACE LES DECLARATIONS :
+	Clr.l	(A0)		LA MUSIQUE N'EST >>PLUS<< EN MEMOIRE
+	Jsr	_LVOFreeMem(A6)
+.NoZik	Move.l	(A7)+,D0
+
+	Subq.w	#1,D0
+	Bgt.s	.LoopRA
+	RTS
+
+	ENDC
+
+
+************** Passer au Level suivant en fonction du mode
+*
+* MODE 0: Séquentiel
+*      1: Toujours le même
+*      2: RND
+*
+NextLevel
+	Move.w	LevelMODE,D0	
+	Beq.s	.Sequ
+
+	***** TOUJOURS LE MEME LEVEL
+	Cmp.w	#1,D0	
+	Beq.s	.Ok
+
+	***** LEVEL EN RND
+.Rnd	Movem.l	MemRnd1,D0-D1
+	Bsr	Rnd_Engine
+	Movem.l	D0-D1,MemRnd1
+	Clr.l	D1
+	Divu.l	#NbLevels,D1:D0
+	* >>>>>> A modifier <<<<<<<<
+	Bra.s	.Ok
+	
+	***** LEVEL EN SEQUENTIEL	
+.Sequ	Move.w	NLevel,D0	
+	Addq.w	#1,D0
+	Move.l	LevelsAdr,A1
+	Tst.l	(A1,D0.w*4)
+	Bne.s	.PRien
+	Clr.w	D0		En boucle
+.PRien	Move.w	D0,NLevel
+
+
+.Ok	RTS
+
+
+
+**********************************************
+
+************		Code
+
+	CodeMemCopy
+	CodeMemStack 
+	CodePalInit
+	CodeColour
+*	CodeMakePalette
+	CodeQPrint
+	CodeQPrintH
+	include	Palette.i
+
+	Include	ChargeFichier.i
+	Include	ChargeOneSon.i
+
+**************************
+
+
+	IFNE	Music_Activation
+	 include	Player/MultiP6.asm
+	ENDC
+
+********************************************************************
+*******************		 VARIABLES	******************
+********************************************************************
+	Section	Variables,bss
+
+PALETTE_IN_PROGRESS	Ds.l	1	0:Rien -1:Interdiction toucher couleurs
+ONLY_LOAD_ZIK	Ds.l	1	0:rien -1:charge sans jouer zik
+SYSTEM_RESIDENT Ds.l 1	0:Systeme coupé   -1:Système résident
+DO_NOT_RETAKE_SYSTEM Ds.l 1	0:Rien -1:NE PAS RECOUPER LE MULTITACHE apres si on a besoin de le réactiver
+DegradeMenuA	Ds.w	1
+DegradeMenuB	Ds.w	1
+FichAdr	Ds.l	1
+FichSiz	Ds.l	1
+TotalPlayingTime Ds.l 1
+SauvePtr	Ds.l	1
+VblPassed	Ds.w	1
+GameOver	Ds.w	1
+NumPlanar	Ds.w	1
+TimeLvl1	Ds.l	1
+TimeLvl2	Ds.l	1
+LvlFillX	Ds.w	1
+LvlFillY	Ds.w	1
+LvlFillXOld Ds.w	1
+LvlFillYOld Ds.w	1
+LvlFillSensX Ds.w	1
+LvlFillSensY Ds.w	1
+LvlFillRemain Ds.w	1	Combien il reste de tours à faire
+LvlFillAnim Ds.w	1	Image de l'anim du mur qui apparait
+LvlFillXMin Ds.w	1
+LvlFillYMin Ds.w	1
+LvlFillXMax Ds.w	1
+LvlFillYMax Ds.w	1	
+LvlEndFill Ds.w	1
+Larg	Ds.w	1
+Haut	Ds.w	1
+Planar	Ds.l	1	Travail
+Planar2	Ds.l	1	Chip 1
+Planar3	Ds.l	1	Chip 2
+Barre2	Ds.l	1
+CopPlanAdr Ds.l	1
+PlanAct	Ds.l	1
+CopList1	Ds.l	1
+CopList2	Ds.l	1
+CopList3	Ds.l	1
+SamplesToKeep Ds.l	1	Adresse liste des sons à ne pas libérer...
+SampleAct	Ds.w	1
+Sauve	Ds.l	16
+CopAdrPl	Ds.l	1
+CopAdrSpr	Ds.l	1
+CopAdrBplCon0 Ds.l	1
+Dim1	Ds.l	1
+Dim2	Ds.l	1
+Dim3	Ds.l	1
+Dim4	Ds.l	1
+Dim5	Ds.l	1	
+Dim6	Ds.l	1
+Dim7	Ds.l	1	
+DimIA1	Ds.l	1
+DimIA2	Ds.l	1
+DimIA3	Ds.l	1
+DimIA4	Ds.l	1
+DimIA5	Ds.l	1
+AdrLevel	Ds.l	1
+ExeBomb	Ds.w	1
+ExeTele	Ds.w	1
+ExeZik	Ds.w	1
+ExeSprite	Ds.w	1
+ExeFlash	Ds.w	1
+ExeLevel	Ds.w	1
+ExeLevelRalent Ds.w	1
+ExeClavier Ds.w	1
+ExeGENERALVbl Ds.w	1
+ExeSauveScreen Ds.w	1
+*ExeBarSamples Ds.w	1
+GameMode	Ds.w	1
+PlayerMode Ds.w	1
+WinGuy	Ds.w	1
+Victoires	Ds.w	8
+VictoiresEq Ds.w	4
+StatsWork		Ds.l	6*5	Stats
+StatsWork2	Ds.l	6*5	Stats en %
+StatsYBase	Ds.w	1
+StatsMem1		Ds.l	1
+StatsMem2		Ds.l	16
+StatsMem3		Ds.l	1
+StatsMem4		Ds.l	1	
+JaugeMem1		Ds.l	1
+LegAutoFire Ds.w	1
+DonneMalOK Ds.w	1
+DirJoue	Ds.w	2
+EFlamme	Ds.w	1
+Btime	Ds.w	1
+BombReb	Ds.w	1
+NbBoucles	Ds.w	1
+MouvX	Ds.l	1
+MouvY	Ds.l	1
+Dx	Ds.w	1
+Dy	Ds.w	1
+Tri	Ds.w	20
+XScr	Ds.w	1
+YScr	Ds.w	1
+SprBaseX	Ds.l	1
+SprBaseY	Ds.l	1
+* Variables temporaires
+GeleState	Ds.w	1
+Temp1	Ds.l	1
+
+Temp2	Ds.l	1
+MaBombNull Ds.w	1
+NLevel	Ds.w	1
+NLevelPrev Ds.w	1
+TypTouche	Ds.w	1
+NWorld	Ds.w	1
+SomClav	Ds.w	1	Nombre de touches appuyées sur le clavier
+NbJoueursEnVie Ds.w	1	joueurs potentiellement vivants (wait fire...)
+NbJEVEq1	Ds.w	1
+NbJEVEq2	Ds.w	1
+NbJActMax Ds.w 	1
+NbJAct	Ds.w 	1	Nombre de bonhommes EFFECTIVEMENT sur l'écran
+NbJAct2	Ds.w 	1	mémoire pour comparaison
+NbBombesEnVie Ds.w	1
+JActivated Ds.w 1
+NbFlammesEnVie Ds.w	1
+WinnersPhase Ds.w	1
+TotMvX	Ds.w	1	!!! ORDRE DE CES 3 VARS IMPORTANT !!!
+TotMvY	Ds.w	1	!
+TotFeu	Ds.w	1	!
+RequestForNewLevel	Ds.w 1
+RequestForNewBar	Ds.w	1
+RequestAffAllDigit	Ds.w	1
+RequestBeginLevel	Ds.w	1
+RequestForPodium	Ds.w	1
+ActPtr	Ds.l	1
+SonIdxPtr	Ds.l	1
+CHEAT_ENABLED Ds.l	1
+CHEAT_COLOUR  Ds.l	1
+CopAdrSprite0 Ds.l	1
+CopAdrSprite1 Ds.l	1
+CopAdrSprite2 Ds.l	1
+CopAdrSprite3 Ds.l	1
+CopAdrSprite4 Ds.l	1
+CopAdrSprite5 Ds.l	1
+CopAdrSprite6 Ds.l	1
+CopAdrSprite7 Ds.l	1
+AdrIndex	Ds.l	1
+AdrIndex8	Ds.l	1
+AdrSprites Ds.l	1	
+AdrSprites8 Ds.l	1	
+SpritesLength Ds.l	1
+Sprites8Length Ds.l	1
+CHEAT_PTR	Ds.l	1
+RenderBase Ds.l	1	Adresse premier octet de render
+LastNBomb	Ds.w	1
+LastNFlam	Ds.w	1
+LastNMur	Ds.w	1
+LastNTele	Ds.w	1
+LastNBumper Ds.w	1
+FlamPtr	Ds.l	1
+FlamDatPtr Ds.l	1
+BombPtr	Ds.l	1
+FontPtr	Ds.l	1
+LegoPtr	Ds.l	1
+MurPtr	Ds.l	1
+TelePtr	Ds.l	1
+BumperPtr	Ds.l	1
+BarrePtr	Ds.l	1
+BarrePtrW	Ds.l	1
+LevelAct	Ds.l	1
+ClavierPtr Ds.l	1
+BobBackPtr Ds.l	1
+OldIntSon3 Ds.l	1
+OldIntSon2 Ds.l	1
+OldIntSon1 Ds.l	1
+OldIntSon0 Ds.l	1
+OldIntSoft Ds.l	1
+MusicVol	Ds.w	1
+MusicVolBack Ds.w	1
+SoundVol	Ds.w	1
+SoundVolGen Ds.w	1
+Volume_Modif Ds.w	1
+ChannelUse3 Ds.w	1	Sémaphore pour le channel
+ChannelPri3 Ds.w	1	Priorité du son actuel
+ChannelUse2 Ds.w	1
+ChannelPri2 Ds.w	1
+ChannelUse1 Ds.w	1
+ChannelPri1 Ds.w	1
+ChannelUse0 Ds.w	1
+ChannelPri0 Ds.w	1
+SampleLoops Ds.w	1
+Son3Loops	Ds.w	1
+Son2Loops	Ds.w	1
+Son1Loops	Ds.w	1
+Son0Loops	Ds.w	1
+Son_Activated Ds.w	1
+SamplesLoaded Ds.w	1
+SamplesTotal  Ds.w	1
+SamplesWait Ds.w	1
+MessageWait Ds.l	NbMaxMessages	Nb de messages max
+MessageWaitPtr Ds.l	1
+XAff	Ds.l	1
+YAff	Ds.l	1
+VarSizePlan Ds.l	1
+VarSizeLine Ds.l	1
+TFreq	Ds.w	1
+OkSon3	Ds.w	1
+OkSon2	Ds.w	1
+OkSon1	Ds.w	1
+OkSon0	Ds.w	1
+Voice3Free Ds.w	1
+Voice2Free Ds.w	1
+Voice1Free Ds.w	1
+Voice0Free Ds.w	1
+BombDGel	Ds.w	1
+MusicInProgress Ds.w 1
+MusicRequest	Ds.w	1
+ActualZik		Ds.w	1
+Flash_Coul1	Ds.l	1
+Flash_Coul2	Ds.l	1
+Flash_Cpt		Ds.w	1
+Flash_CoulNumber	Ds.w	1
+WaitHardTime	Ds.w	1
+TempExe		Ds.w	1
+AutoDecounter	Ds.l	1
+AutoCounter	Ds.l	1
+BarreDecounter	Ds.l	1
+CopEndPtr		Ds.l	1	
+CopBarrePtr	Ds.l	1
+MemBonus		Ds.w	1
+MemRnd1		Ds.l	1
+MemRnd2		Ds.l	1
+WaitVol		Ds.w	1
+WaitVol2		Ds.w	1
+LevelMODE		Ds.w	1
+MemTime1		Ds.w	1	
+MemTime2		Ds.w	1
+MemTime3		Ds.w	1
+MemTime4		Ds.w	1
+MemTime5		Ds.w	1
+MemZik		Ds.w	1
+MemZikCh		Ds.w	1
+PlayersSet	Ds.l	2
+BumperPtrAct	Ds.l	1
+NbJoueursAct 	Ds.w	1
+RebonON		Ds.w	1
+LevelInfoState	Ds.w	1
+TravK		Ds.l	1
+SemaTime		Ds.l	1
+TempPal		Ds.l	1
+TempCoul		Ds.l	1
+*Mem1		Ds.l	1
+PosDigitJ		Ds.w	1
+PosLevelJ		Ds.w	1
+LargLevelJ	Ds.w	1
+ModeAct		Ds.w	1
+TriJoueWork	Ds.b	6*8	
+MemDisplay	Ds.l	2
+StrWork		Ds.b	100
+BarOutWork	Ds.w	4
+NbCreated		Ds.w	1
+KeyStateESC	Ds.w	1
+SlidePicAct	Ds.l	1
+PicPtr		Ds.l	1
+PalPtr		Ds.l	1
+YActBonus		Ds.l	1	pour slider
+SensActBonus	Ds.l	1
+WaitBonus		Ds.l	1
+SizePlanAct	Ds.l	1	idem
+SlideBreak	Ds.w	1
+JaugeCpt		Ds.w	1
+LevelsAdr		Ds.l	1
+MusicFadeVol	Ds.l	1
+MusicFadeVec	Ds.l	1
+MemBIGerror	Ds.l	1
+RequestForClearBois	Ds.l	1
+NewLevel		Ds.w	1	Level en cours nouveau ? ou don't move ?
+SurvivorMode	Ds.w	1
+Cycle_Wait	Ds.w	1	0
+Cycle_Speed	Ds.w	1	1 execution sur "N" Vbl
+Cycle_FirstCoul	Ds.w	1	
+Cycle_LastCoul	Ds.w	1
+Cycle_Activate	Ds.w	1	>0:Normal <0:Sens inverse
+Cycle_PalAdr	Ds.l	1	Adresse DEBUT palette
+Anim_Type		Ds.w	1	Animation winning/égalité
+Anim_Act0		Ds.l	1
+Anim_Act1		Ds.l	1
+GamesSincePodium	Ds.w	1
+NbPlayersFeel	Ds.w	1
+AdrZone1		Ds.l	1
+AdrZone2		Ds.l	1
+AdrZone3		Ds.l	1
+Source_SizePlan	Ds.w	1
+Source_SizeLine	Ds.w	1
+Source_AdrPlan	Ds.l	1
+ImageAct1		Ds.w	1
+ImageSens1	Ds.w	1
+ImageAct2		Ds.w	1
+ImageSens2	Ds.w	1
+ImageAct3		Ds.w	1
+ImageSens3	Ds.w	1
+PasMarche1	Ds.l	1
+PasMarche2	Ds.l	1
+PasMarche3	Ds.l	1
+JParMarche	Ds.w	3	Pour les 3 marches
+FeelCol		Ds.w	1	Couleur voulue après COLORIAGE
+Ask_To_Stop	Ds.w	1	Demande d'arrêt anim podium
+LegCaseActPetite	Ds.l	1
+LegCaseActGrosse	Ds.l	1
+LegCaseNewPetite	Ds.l	1
+LegCaseNewGrosse	Ds.l	1
+ValRoutageAct	Ds.w	1
+Flam_VAct		Ds.w	1
+
+	even
+	DataMemStack 300	43+(6*30)		8 octets
+
+*****************>>>>> ROUTAGE <<<<<*********************	
+		even
+*DimIA3		Ds.w	4	ROUTAGE: Danger par direction
+EtapeAct		Ds.w	1	ROUTAGE
+EtapeMaxDir1	Ds.w	1	ROUTAGE
+EtapeMaxDir2	Ds.w	1	ROUTAGE
+EtapeMaxDir3	Ds.w	1	ROUTAGE
+EtapeMaxDir4	Ds.w	1	ROUTAGE
+NbSource		Ds.w	1	ROUTAGE
+ValRoutage	Ds.w	1	ROUTAGE
+
+*	Section	BigWork,bss
+	even	
+PalSrc	Ds.l	4*3*256	Palette
+PalVec	Ds.l	4*3*256
+PalWork	Ds.l	4*3*256
+PalWork2	Ds.l	4*3*256
+PalAct	Ds.l	3*256
+PalAct2	Ds.l	3*256
+FeelWork	Ds.b	Feel_SizeOf*6
+RndCorresp Ds.b	257	N° Bonus correspondant au nombre RND (0-256=257)
+TNomFich	Ds.b	256
+
+*	Section 	LEVELS_PTR,bss
+	
+	Even
+Levels	Ds.b	LevelsPtrZone
+LevelsEnd
+
+********************************************************************
+*******************		 DATAS		******************
+********************************************************************
+	Section	DONNEES,Data
+*************		Vars
+
+	*****
+Msg1	Dc.b	"Ha ha ha ! I'm lauphing ! you don't have an AGA machine ! :-)",10,0
+Msg2	Dc.b	"What ? You still don't have a 68020 ? :-)",10,0
+Msg3	Dc.b	"Hum! It seems you don't have enough RAM !",10,0
+Msg4	Dc.b	10,"So... See you soon ! Hope u enjoyed playing this game.",10
+	Dc.b	10,"You played",0
+Msg4_Only	Dc.b	10,"We hope we'll see you soon !",10
+	Dc.b	10,"You only played",0
+Msg4A	Dc.b	" and",0
+Msg4B	Dc.b	" hours",0
+Msg4B2	Dc.b	" one hour",0
+Msg4C	Dc.b	" minutes",0
+Msg4C2	Dc.b	" one minute",0
+Msg4D	Dc.b	" seconds",0
+Msg4D2	Dc.b	" one second",0
+Msg4E	Dc.b	".",10,10,0
+
+	*****
+Rien	Dc.l	0	Le sprite vide semble moins bien marcher...
+	Dc.w	%0010110000000000,%0010110000000110
+	Dc.l	0	Sprite "vide" mais à une position invisible
+
+	***** Extra
+
+JoyList	Dc.l	Joy0	
+	Dc.w	0
+	Dc.l	Joy1
+	Dc.w	0	
+	Dc.l	Joy3
+	Dc.w	0
+	Dc.l	Joy4
+	Dc.w	0
+	Dc.l	Clavier1
+Cl1Lock	Dc.w	0
+	Dc.l	Clavier2
+Cl2Lock	Dc.w	0
+	Dc.l	Clavier3
+Cl3Lock	Dc.w	0
+	Dc.l	MicroDeclenchement
+ClMLock	Dc.w	0	1=Multi utilisation possible
+	Dc.l	0	Fin de liste
+
+JoyList2	Dc.l	Joy0Menu
+	Dc.l	Joy1	Juste ce qui est utilisable pour les menus
+	Dc.l	Joy3
+	Dc.l	Joy4
+	Dc.l	Clavier1
+	Dc.l	Clavier1Menu	
+	Dc.l	0
+
+	*****			INDEX IMAGES DES BONUS
+BonusIdx	Dc.w	Bloc_Vide	>> RIEN <<
+	Dc.w	60	1 * Flamme
+	Dc.w	30	2 * Bombe	
+	Dc.w	55	3 * Pousse bombe
+	Dc.w	40	4 * Maladie Inversion 40=Tête mort
+	Dc.w	40	5 Maladie Petites flammes
+	Dc.w	40	6 Maladie time bombe fast
+	Dc.w	40	7 Maladie vitesse lente
+	Dc.w	40	8 Maladie vitesse rapide
+	Dc.w	40	9 Maladie time bombe slow
+	Dc.w	70	10 * Camembert
+	Dc.w	75	11 * Gèle bombes
+	Dc.w	40	12 Maladie grandes flammes
+	Dc.w	40	13 Maladie pose plus (plus du tout) de bombes
+	Dc.w	40	14 Maladie pose plus (+) de bombes
+	Dc.w	95	15 Maladie goutte d'eau (80 goutte,95)
+	Dc.w	65	16 * Trousse de secours
+	Dc.w	90	17 * Bonus horloge
+	Dc.w	40	18 Maladie Bombe rebondit (25)
+	Dc.w	190	19 * Bombes "folles"
+	Dc.w	285	20 * Beaucoup bombes  195+6*15
+	Dc.w	290	21 * Beaucoup flammes
+	Dc.w	85	22 * Cadeau
+	Dc.w	40	23 * Collique, pose bombes
+	Dc.w	0
+	
+	***** Bonus tels qu'ils apparaissent dans la barre des joueurs
+BonusIdxHires
+	Dc.w	Bloc_Vide
+	Dc.w	6	1 Flamme
+	Dc.w	0	2 Bombe	
+	Dc.w	5	3 Pousse bombe
+	Dc.w	12	4 Maladie Inversion
+	Dc.w	13	5 Maladie Petites flammes
+	Dc.w	17	6 Maladie time bombe fast
+	Dc.w	3	7 Maladie vitesse lente
+	Dc.w	1	8 Maladie vitesse rapide
+	Dc.w	18	9 Maladie time bombe slow
+	Dc.w	8	10 Camembert
+	Dc.w	9	11 Gèle bombes
+	Dc.w	19	12 Maladie grandes flammes
+	Dc.w	20	13 Maladie pose plus (plus du tout) de bombes
+	Dc.w	21	14 Maladie pose plus (+) de bombes
+	Dc.w	4	15 Maladie goutte d'eau	(10 goutte,4)
+	Dc.w	7	16 Trousse de secours
+	Dc.w	22	17 Horloge
+	Dc.w	25	18 Bombe rebondit
+	Dc.w	26	19 Bombes "folles"
+	Dc.w	28	20 Beaucoup bombes
+	Dc.w	29	21 Beaucoup flammes
+	Dc.w	11	22 Cadeau
+	Dc.w	21	23 Collique, pose bombes
+	Dc.w	0
+	
+ToyoIdx	Dc.w	Type_Toyo_ImBase-1	-1=Image tuyau vide (anti-bugs)
+	Dc.w	Type_Toyo_ImBase-1
+	Dc.w	Type_Toyo_ImBase-1
+	Dc.w	Type_Toyo_ImBase
+	Dc.w	Type_Toyo_ImBase-1
+	Dc.w	Type_Toyo_ImBase+1
+	Dc.w	Type_Toyo_ImBase+2
+	Dc.w	Type_Toyo_ImBase+3
+	Dc.w	Type_Toyo_ImBase-1
+	Dc.w	Type_Toyo_ImBase+4
+	Dc.w	Type_Toyo_ImBase+5
+	Dc.w	Type_Toyo_ImBase+6	
+	Dc.w	Type_Toyo_ImBase+7
+	Dc.w	Type_Toyo_ImBase+8
+	Dc.w	Type_Toyo_ImBase+9
+	Dc.w	Type_Toyo_ImBase+10
+
+
+* Liste des bonus:
+*
+* Flamme,Bombe,Pousse bombe,Maladie Inversion,Maladie Petites flammes
+* Maladie time bombe fast,Maladie vitesse lente,Maladie vitesse rapide
+* Maladie time bombe slow,Camembert,Gèle bombes,Maladie grandes flammes
+* Maladie pose plus de bombes,Maladie pose plus de bombes,Maladie
+* goutte d'eau
+*
+
+
+	*****
+
+LvlPalINDEX
+	Dc.l	LvlPal_Normal	0
+	Dc.l	LvlPal_Alien	1
+	Dc.l	LvlPal_Antique	2
+	Dc.l	LvlPal_Tronic	3
+	Dc.l	LvlPal_Wood	4
+	Dc.l	LvlPal_Dyna	5
+
+
+	*****
+	IFNE 	Music_Activation
+Musiques	Dc.l	0,0,0,0		Adr,Len,Musique 0=NoZik,Vide
+	Dc.l	0,0,Music1F,0	Adr,Len,Musique 1 (F3),Vide
+	Dc.l	0,0,Music2F,0	Musique 2 (F4)
+	Dc.l	0,0,Music3F,0	Musique 3 (F5)
+	Dc.l	0,0,Music4F,0	Musique 4 (F6)
+	Dc.l	0,0,Music5F,0	Musique 5 (F7)
+	Dc.l	0,0,Music6F,0	Musique 6 (F8)
+	Dc.l	0,0,Music7F,0	Musique 5 (F9)
+	Dc.l	0,0,Music8F,0	Musique 6 (F10)
+	Dc.l	0,0,MusicMF,0	Musique Menu
+	ENDC
+
+*************		Data
+	
+	DataIntM 1,127	Vbl (5)
+	DataIntM 2,-127	Clavier (3)
+	DataIntM 3,127	Son 3 (10)
+	DataIntM 4,127	Son 2 (9)
+	DataIntM 5,127	Son 1 (8)
+	DataIntM 6,127	Son 0 (7)
+	DataIntM 7,-127	Copper (2)
+	DataInitSprites
+	DataColour
+	DataQPrint
+
+*****************************************************
+
+
+***********************	FICHIERS
+
+	*Section	FILES,data
+
+FilesList	Dc.l	Memf_Public,SprIndex8N,SprIndex8	Fichier résidents
+	Dc.l	Memf_Public,SprIndexN,SprIndex
+	Dc.l	Memf_Public,BigBlocDatN,BigBlocDat
+	Dc.l	Memf_Public,BlocDatN,BlocDat
+	Dc.l	Memf_Public,FeelDatN,FeelDat
+	Dc.l	Memf_Public,FlamDat1N,FlamDat1
+	Dc.l	Memf_Public,FlamDat2N,FlamDat2
+	Dc.l	Memf_Public,FlamDat3N,FlamDat3	
+	Dc.l	Memf_Public,MainBoxN,MainBox
+	Dc.l	Memf_Public,FTinyTxt8N,FTinyTxt8
+	Dc.l	Memf_Public,FAachen13N,FAachen13
+	Dc.l	Memf_Public,FMob8N,FMob8
+	Dc.l	Memf_Public,BarreI4N,BarreI4
+	Dc.l	Memf_Public,BarreI6N,BarreI6
+	Dc.l	Memf_Public,BarreT4N,BarreT4
+	Dc.l	Memf_Public,BarreT6N,BarreT6	
+	Dc.l	Memf_Public,FonteN,Fonte
+	Dc.l	Memf_Public,DynaBlasterN,DynaBlaster
+	Dc.l	Memf_Chip,BoisN,Bois
+	Dc.l	Memf_Public,TimerDat1N,TimerDat1
+	Dc.l	Memf_Public,JaugDatN,JaugDat
+	Dc.l	Memf_Public,JaugDatTN,JaugDatT
+	*Dc.l	Memf_Public,ColPaletteN,ColPalette
+	*Dc.l	Memf_Public,ColPalSprN,ColPalSpr
+	Dc.l	Memf_Public,ColPalJaugeN,ColPalJauge
+	Dc.l	Memf_Public,StatsBlocsN,StatsBlocs
+	Dc.l	0,0,0
+
+SprIndex8N Dc.b	'Binary/Lego_SpritesIndex8.dat',0
+SprIndexN	Dc.b	'Binary/Lego_SpritesIndex.dat',0
+BigBlocDatN Dc.b	'Binary/BigBloc.dat',0
+BlocDatN	Dc.b	'Binary/Lego_Blocs.dat',0
+FeelDatN	Dc.b	'Binary/Lego_Feelings.dat',0
+FlamDat1N	Dc.b	'Binary/Lego_Flam_bib.dat',0		Masque+6 plans, 8x 8, 256 vues
+FlamDat2N	Dc.b	'Binary/Lego_Flam_manu.dat',0
+FlamDat3N Dc.b	'Binary/Lego_Flam_Lazer.dat',0
+MainBoxN	Dc.b	'Binary/MainMenuBox.dat',0
+FTinyTxt8N Dc.b	'Binary/TinyTxt8.font',0
+FAachen13N Dc.b	'Binary/Aachen13.font',0
+FMob8N	Dc.b	'Binary/Mob.font',0
+BarreI4N	Dc.b	'Binary/BarreJI4.raw',0		Barre, Hires 64c 640*18
+BarreI6N	Dc.b	'Binary/BarreJI6.raw',0
+BarreT4N	Dc.b	'Binary/BarreJT4.raw',0
+BarreT6N	Dc.b	'Binary/BarreJT6.raw',0
+BoisN	Dc.b	'Binary/Bois.raw',0			Lowres 64c 320*18
+FonteN	Dc.b	'Binary/Font1.QuickFont',0
+DynaBlasterN Dc.b	'Binary/Lego_Level999.dat',0
+TimerDat1N Dc.b	'Binary/Timer1.dat',0		Horloge!    6 plans  16x11   17 vues
+JaugDatN	Dc.b	'Binary/Jauge.dat',0		Jauges victoires
+JaugDatTN	Dc.b	'Binary/JaugeTeams.dat',0		Jauges victoires TEAMS
+StatsBlocsN Dc.b	'Binary/StatsBlocs.dat',0		24*122 masque,7 pl
+
+*ColPaletteN	Dc.b	'Binary/bobs_nus24.col',0		64 couleurs
+*ColPalSprN	Dc.b	'Binary/Lego_Sprites.col',0		16 couleurs sur 32
+ColPalJaugeN	Dc.b	'Binary/PalJauge.col',0		Palette chargement...
+	*
+LevelsN	Dc.b	'binary/lego_level000.dat',0		Générateur de chargement
+
+	*** Pointeurs sur la mémoire PUBLIC
+
+SprIndex8	 Dc.l	0
+SprIndex	Dc.l	0
+BigBlocDat Dc.l	0
+BlocDat	Dc.l	0
+FeelDat	Dc.l	0
+
+LvlFlamINDEX	
+FlamDat1	Dc.l	0
+FlamDat2	Dc.l	0
+FlamDat3	Dc.l	0
+
+MainBox	Dc.l	0
+FTinyTxt8	Dc.l	0
+FAachen13	Dc.l	0
+FMob8	Dc.l	0
+
+BarreJoueurs
+BarreI4	Dc.l	0
+BarreI6	Dc.l	0
+BarreT4	Dc.l	0
+BarreT6	Dc.l	0
+
+Fonte	Dc.l	0
+
+DynaBlaster Dc.l	0
+
+TimerDat1	Dc.l	0
+
+JaugDat	Dc.l	0
+JaugDatT	Dc.l	0
+
+StatsBlocs Dc.l	0
+
+*ColPalette Dc.l	0
+*ColPalSpr  Dc.l	0
+ColPalJauge Dc.l	0
+
+	*** Pointeurs sur la CHIP
+
+Bois	Dc.l	0
+
+*TimerDat2	IncBin	Binary/Timer2.dat		milieu horloge        8x 5    2 vues
+
+	** Les deux fichiers sont obligatoirement à la suite !
+Palette	IncBin	Binary/bobs_nus24.col	64 couleurs
+PalSpr	IncBin	Binary/Lego_Sprites.col	16 couleurs sur 32
+
+*PalJauge	IncBin	Binary/PalJauge.col		Palette chargement...
+
+
+Spr8ColNormal Incbin Binary/Mec8_Normal.col	POIDS FORT.W, POIDS FAIBLE.W
+PalProxi	IncBin	Binary/proxima.col
+PodiumCol	IncBin	Binary/PODIUM.col
+MenuACol	IncBin	Binary/MenuA.col		128 couleurs
+MenuBCol	IncBin	Binary/MenuB.col
+TestCol	IncBin	Binary/Test.col
+MenuCreditsCol IncBin Binary/Menu_Credits.col
+MenuBonusCol IncBin	Binary/Menu_Bonus.col
+MenuAcop	IncBin	Binary/MenuA.cop		1056 octets (copper)
+MenuBcop	IncBin	Binary/MenuB.cop
+
+
+
+	
+
+
+
+*******************************************************************
+
+	****
+	IFNE	Music_Activation
+p61_data	 * Pour le P6 qui semble avoir un bug (?)	
+Music1F	 Dc.b	'Mods/Mod_Game1.p6',0
+Music2F	 Dc.b	'Mods/Mod_Game2.p6',0
+Music3F	 Dc.b	'Mods/Mod_Game3.p6',0
+Music4F	 Dc.b	'Mods/Mod_Game4.p6',0
+Music5F	 Dc.b	'Mods/Mod_Game5.p6',0
+Music6F	 Dc.b	'Mods/Mod_Game6.p6',0
+Music7F 	 Dc.b	'Mods/Mod_Game7.p6',0
+Music8F	 Dc.b	'Mods/Mod_Game8.p6',0
+MusicMF	 Dc.b	'Mods/Mod_Menu.p6',0
+	ENDC
+
+
+	***********
+	* Définition: BarreX,BarreY,Base,BlocX,FEELINGS  .W = 8 (*6) = 48
+	* StartB1=0,StartB2=448,LargB=96,DiffB=6 (octets)
+	* StartB3=256 (256/8=32)
+	Even
+of	set	56
+
+	* Couleurs: Vert,Bleu,Rouge,Jaune
+PosBarre
+	Dc.w	StartB3/8+1,1,28+of,StartB3/8+1+DiffB,J1_Deb
+	Dc.w	StartB3/8+1+LargB/8,1,31+of,StartB3/8+LargB/8+1+DiffB,J2_Deb
+	Dc.w	StartB3/8+1+(LargB/8)*2,1,34+of,StartB3/8+(LargB/8)*2+1+DiffB,J3_Deb
+	Dc.w	StartB3/8+1+(LargB/8)*3,1,37+of,StartB3/8+(LargB/8)*3+1+DiffB,J4_Deb
+	* VITAL A CAUSE DU DECALAGE mais normalement inutile !
+	Dc.w	StartB3/8+1,1,96,StartB3/8+LargB/8+1+DiffB,J5_Deb
+	Dc.w	StartB3/8+1,1,99,StartB3/8+LargB/8+1+DiffB,J6_Deb
+
+	* Décalage: OffPosBarre=8*6=48 (TRES important !)
+	Dc.w	72/8,1,28+of+18,120/8,J1_Deb	J1
+	Dc.w	168/8,1,31+of+18,216/8,J2_Deb	J2	Diff1=96,,Diff2=96
+	Dc.w	264/8,1,34+of+18,312/8,J3_Deb	J3	Et Diff3=2-1=48
+	Dc.w	360/8,1,37+of,408/8,J4_Deb	J4
+	Dc.w	456/8,1,96,504/8,J5_Deb	J5
+	Dc.w	552/8,1,99,600/8,J6_Deb	J6
+
+	Even
+PosBarreTeams
+	Dc.w	StartB1/8+1,1,28+of,StartB1/8+1+DiffB,J1_Deb
+	Dc.w	StartB2/8+1,1,31+of,StartB2/8+1+DiffB,J2_Deb
+	Dc.w	StartB1/8+1+LargB/8,1,34+of,StartB1/8+LargB/8+1+DiffB,J3_Deb
+	Dc.w	StartB2/8+1+LargB/8,1,37+of,StartB2/8+LargB/8+1+DiffB,J4_Deb
+	*
+	Dc.w	StartB1/8+1+LargB/4-2,1,96,StartB1/8+LargB/4+1+DiffB-2,J5_Deb
+	Dc.w	StartB1/8+1+LargB/4-2,1,99,StartB1/8+LargB/4+1+DiffB-2,J6_Deb
+
+	Dc.w	8/8,1,28+of+18,48/8,J1_Deb 	J1	Quand il y a 6 joueurs
+	Dc.w	384/8,1,31+of+18,424/8,J2_Deb	J2
+	Dc.w	96/8,1,34+of+18,136/8,J3_Deb	J3	Diff=88	
+	Dc.w	472/8,1,37+of,512/8,J4_Deb	J4	Diff2=40
+	Dc.w	184/8,1,96,224/8,J5_Deb	J5
+	Dc.w	560/8,1,99,600/8,J6_Deb	J6
+
+TeamVictPos
+	Dc.w	192/8+1		Position mode TEAMS 4 joueurs
+	Dc.w	432/8+1
+	Dc.w	264/8+1		Pour le mode 6 joueurs
+	Dc.w	360/8+1
+
+
+FolleList	Dc.w	-1,0		Bonus "bombes folles"
+	Dc.w	0,1
+	Dc.w	0,-1
+	Dc.w	1,0
+
+
+SVide	Dc.w	2	Son vide en cas d'erreur de chargement
+	Dc.w	400
+	Dc.l	0
+
+	*****
+SonIdx	Dcb.l	MaxSamples,0
+	******
+
+SamplesPodium * 	Liste des sons utilisés dans le Podium
+	Dc.w	8
+	Dc.w	17
+	Dc.w	18
+	Dc.w	-1
+
+
+	
+*	Section 	LEVELS_EXTRA,data
+
+
+**********
+
+LvlPal_Normal	Incbin	Binary/bobs_nus22.col	64 couleurs 0
+LvlPal_Alien	Incbin	Lego_Worlds/Alien_World.col		1
+LvlPal_Antique	Incbin	Lego_Worlds/Antique_World3.col	2
+LvlPal_Tronic	Incbin	Lego_Worlds/Tronic_World4.col		3
+LvlPal_Wood	Incbin	Lego_Worlds/Wood_World.col		4
+LvlPal_Dyna	Incbin	Lego_Worlds/Dyna_World.col
+
+Worlds	Dc.l	Phrase_W1
+	Dc.l	Phrase_W2
+	Dc.l	Phrase_W3
+	Dc.l	Phrase_W4
+	Dc.l	Phrase_W5
+	Dc.l	Phrase_W6
+
+DegradesDat
+	Dc.b	21,0,99,62,0,255	Bleu doux        	OK RGB->RGB
+	Dc.b	49,0,29,255,0,43	Rouge mauve	OK
+	Dc.b	52,13,76,133,93,156	Mauve joli	OK
+	*Dc.b	0,6,55,0,5,255	Bleu stylé foncé 	!!!BOF!!!!
+	Dc.b	0,25,56,79,105,134	Bleu-gris design	OK
+	Dc.b	0,46,0,0,137,0	Vert propre	OK
+	Dc.b	84,0,59,171,5,209	Rose Violet	OK
+	* Mettre à jour NbDegrades pour conserver la cohérence
+
+Winning_List
+	Dc.w	ImDebFin5
+	Dc.w	ImDebFin6
+	Dc.w	0
+
+Egalite_List
+	Dc.w	ImDebFin1
+	Dc.w	ImDebFin2
+	Dc.w	ImDebFin3
+	Dc.w	ImDebFin4
+	Dc.w	0	
+
+
+Phrase_Oui Dc.b	'Yes',0
+Phrase_Non Dc.b	'No',0
+Phrase_Ready Dc.b	'READY ?!',0
+Phrase_Lvl Dc.b	'Level ',0
+Phrase_W1 Dc.b	'Normal',0
+Phrase_W2 Dc.b	'Alien',0
+Phrase_W3 Dc.b	'Antic',0
+Phrase_W4 Dc.b	'Tronic',0
+Phrase_W5 Dc.b	'Wood',0
+Phrase_W6 Dc.b	'Teams',0
+Phrase_World Dc.b	'World',0
+Phrase_Time1 Dc.b	'ALERT TIME  ',0
+Phrase_Time2 Dc.b	'TOTAL TIME  ',0
+Phrase_Minutes Dc.b ':',0
+Phrase_Secondes Dc.b ' Seconds.',0
+Phrase_Secondes2 Dc.b 0
+Phrase_Titre1	Dc.b	'DEADS',0
+Phrase_Titre2	Dc.b	'GAMES',0
+Phrase_Titre3	Dc.b	'WINS',0
+Phrase_Titre4	Dc.b	'BOMBS',0
+Phrase_Titre5	Dc.b	'BONUS',0
+Phrase_ErrMem	Dc.b	'Loading or Out of memory error.',0
+Quit_ERRORCODE	Dc.l	0
+CHEAT_SEQUENCE	Dc.b	25,19,24,50,23,41,16,23,33,36,19,18,16,20,0
+*	Dc.b	21,24,22,16,19,18,16,36,19,18,16,20,51,24,34,18,19,0
+*,57,74,11,0	youareagreatcoder:-)
+FichSamplesDef Dc.b	'Samples.def',0
+FichConfig Dc.b	'LegoBlast.Prefs',0
+DosName	Dc.b	'dos.library',0
+Err_Mem	Dc.b	'Out Of Memory. Sorry. I need a lot of CHIP...',0
+Err_Load	Dc.b	'Loading error: ',0
+Err_Abort	Dc.b	'Loading aborted: Code error',10,0
+Err_End	Dc.b	10,0
+Ok_Load	Dc.b	'Loaded ',0
+Ok_LoadP	Dc.b	'.',0
+Msg_Welcome
+	Dc.b	'Welcome in Legoblast! a 100% Asm Game by Proxima',10
+	Dc.b	'AGA, 68020+ required. Enjoy the game !',10,0
+Phrase_Module Dc.b	'Module ',0
+Phrase_ChOk Dc.b	'Loaded successfully.',0
+Phrase_ChEr Dc.b	'Loading error.',0
+Phrase_MusicOff Dc.b 'Music Off',0
+Phrase_Pause Dc.b	'PAUSED',0
+Phrase_DontMove Dc.b "!!! DON'T MOVE !!!! You have another chance !!!",0
+Phrase_Survivor Dc.b "!!! SURVIVOR MODE !!!",0	
+Phrase_VolMusique Dc.b	'Music volume: ',0
+Phrase_VolSound Dc.b	'         Sound volume: ',0
+Phrase_NbSamples Dc.b 'Samples loaded: ',0
+Spr8Name	Dc.b	'Binary/Lego_Sprites8.dat',0
+Spr4Name	Dc.b	'Binary/Lego_Sprites.dat',0
+DosBase	Dc.l	0
+DefOutPut	Dc.l	0
+
+***********
+Author	Dc.b	10,10,10,10,10,'+-- Code 100% ASM by Gogo! --+',10,10,10
+	Dc.b	'My precedent assembler creation was the demo Bunk (Demo/File) presented at the Volcanic Party II in 1996',10,10,10
+	Dc.b	'This game is more than 15,000 lines long... this is my first 100% ASM game but surely the last ! DEBUG DEBUG DEBUG... Grrr!',10,10,10
+	Dc.b	'Our next creation in Proxima will certainely be done in C language, because Black Angel knows C and Cobalt want to learn it...',10
+	Dc.b	'But since i don''t master C calls, i''ll surely use assembly routines for graphics and interruptions...',10
+	Dc.b	'This could be better to be three coders instead of one (me ;-)): This could permit to make others doing necessary things',10
+	Dc.b	'like menus... or even more for Black Angel...',10
+	Dc.b	'In assembly, everything needs time, even menus...',10,10,10
+	Dc.b	'So... have a good coding and see you soon !!! 	             !GogO!',10,10,10
+	Dc.b	'P.S.: A big Hello to all other DYNABLASTER-Clones and ASM-LANGUAGE Coders !!!'
+	Dc.b	10,10,10,10,10
+Version	Dc.b	'$VER:Legoblast 1.7 (03.06.00)'
+	Dc.b	'The third PROXIMA''s game, first one in ASM 100%',0
+*******************************************************
+	even
+	Include	Decrunch.i	Décompactage de fichiers
+	even	
+*
+NomSauve	Dc.b	'ram:sauve.raw',0
+NomDebug2		Dc.b	'ram:Dim2Visible',0
+NomDebugIA1	Dc.b	'ram:RoutageIA1Routage',0
+NomDebugIA2	Dc.b	'ram:RoutageIA2Points',0
+NomDebugIA3	Dc.b	'ram:RoutageIA3LigCol',0
+NomDebugIA4	Dc.b	'ram:RoutageIA4',0
+NomDebugIA5	Dc.b	'ram:RoutageIA5',0
+
+	even
+JamaisPlus	Dc.w	0
+
+*******************************************************************
+
+
+	Section	BSS_en_CHIP,bss_c
+
+	even
+BarBackup Ds.b	SizePlanBarre*NbPlansBarre	144 de large juste pour nom
+	
+
+*******************************************************************
+
+
+*******************************************************************
+
+
+
+
+*
+* 
+* MASQUE POUR: 	- BOMBES
+*		- FLAMMES
+*		- MURS (destruction)
+*
+*
+**************** NEW
+
+******************************************************************
+*
+*Changements par rapport à l'ancienne version:
+*
+*Les DIM font 64x64 cases, pas moyen de modifier
+*Si une case = -1 dans le dim, au moment de l'affichage du tableau
+*elle ne sera pas affichee, et si =0, ce sera du fond.
+*De ce fait, le centrage se fera de facon bourrin a la creation du tableau,
+*et non au fur et a mesure. En plus, on elimine les MUL
+*
+**********************
+*
+* Ordre de traçage (Couches successives)
+*
+*  *OK*     *OK*    *OK*
+*  Flammes  Bloc    Bombes
+*  Fond     Fond    Fond
+*
+*Tout est facile, puisqu'il n'y a JAMAIS plus de 2 couches. (La couche
+*des sprites est toujours supperposée, mais de facon hard, donc aucun
+*soucis de ce cote la).
+*
+************************
+*
+* LevelInfoState:
+*	-1: Affiché en ce moment sur l'écran
+*	0: Attente début level (possibilité affichage)
+*	1: Affichage déjà effacé ou interdit d'apparaitre
+*	2: En COURS d'affichage (Sémaphore !: Sprites Vbl!)
+*	3: Demande de restauration cadre transparent
+*
+* Anim_Type.W:
+*	0: Winning	Anim_Act0.L
+*	1: Egalité	Anim_Act1.L
+*
+* Fin de niveau:
+*
+* A/	GAMEOVER=-1 par Sprites2.i: un joueur restant ou même équipe
+*      ou GAMEOVER=-1 par fin du temps réglementaire pour le level
+*
+* B/ 	Attente que NbFlammesEnVies=0 et NbBombesEnVie=0
+*    ->   Arrêt musique (Fade) 
+*    ->	Arrêt blocs de fin de level (Fin du bloc en cours)
+*
+* C/	Attente fin anims mort et téléportation en cours
+*    ->   WINNERSPHASE=1
+*    ->	Calcul des victoires et affichages correspondants
+*	-> Bra:   ".Win"  ou  ".Perdu"  ou  ".Egalite"
+*	-> Si 5 victoires: Request pour le podium
+*    ->   Lancement des animations de victoire des joueurs
+*	-> WINNERSPHASE=2    <------- INUTILE ???
+*
+* SI DON'T MOVE: WINNERSPHASE=3 pour empêcher les traitements précédents
+*
+**********************
+*
+*Dim1=Dim avec les numéros des bombes (1-32767)
+*Dim2=Dim visible : Rien(-1), Font(0), Murs(1), Bonus(2), Bombes(3)
+*Dim3=Dim des passages secrets: Il peut y avoir un passage derriere un mur !
+*			       et meme derriere un Bonus ! ;-)
+*			       Numéro
+*Dim4=Dim des flammes (16 octets au lieu de 4)
+*Dim5=Dim avec les bonus derrière les murs (A moins que je fasse un RND ? :-/)
+*Dim6=Dim des bumpers (N° des bumpers 0-32767)
+*Dim7=Dim des blocs spéciaux (anti-feu, antimec, etc...)
+*
+*Chose IMPORTANTE: Pour simplifier la gestion des offsets, tous les
+*DIM ont la meme taille de structure
+*
+************************
+*
+*
+* TRUC SYMPA A FAIRE: Transmettre l'énergie restante
+* d'une flamme aux autres flammes restantes de la
+* même bombe:
+*
+*	*		   F
+*       * BFFFF    au lieu de   FBF
+*	*		   F	
+*
+************************
+*
+* Pour les tuyaux : 32-47 : Si Btst(Case,5), alors la flamme continue
+* Si case actuelle=Tuyau, alors on réagit en fonction du tuyau
+*
+* 
+* Pour transformer la palette pour les sprites qui est composée non
+* de 4.B mais de 2 .W, il faut utiliser GfxMaster en mode DATA/AGA24/BINARY
+*
+*
+************************
+* POUR LES "DON'T MOVE":
+*
+* On a une variable "newlevel" qui détermine si le level actuel
+* est une reprise après un don't move ou pas.
+* Pour un même level, un joueur n'a droit qu'à un seul don't move,
+* après quoi il n'y en aura plus pour lui, et si un autre joueur
+* meurt après dans un autre don't move, l'ancien joueur mort
+* ne réapparaitra pas dans la prochaine reprise du niveau.
+* Pour ce don't move, j'ai:
+* - newlevel              si le level est une reprise à 0, sinon -1
+* - leg_dontmove()        nombre de morts de ce joueur pour ce level
+* - Jsr	InitsDontMove   pour initialiser les variables précedentes
+************************
+*
+* 2358
+*	Move.l	MenuPtrOptA2,D0
+*	Sub.l	#Opt_ModeJ1,D0
+*	Lsr.w	#2,D0	D0: N° choix (0=Free/1=5 Match)
+*	Move.w	D0,GameMode
+*
+*	Move.l	MenuPtrOptP0,D0
+*	Sub.l	#Opt_ModeP1,D0
+*	Lsr.w	#2,D0	D0: N° choix (0=Individual/1=Teams/2=Survivor)
+*	Move.w	D0,PlayerMode
+*
+* 2303
+*
+************************
+*
+*	Clr.l	D2	
+*.Loop	Tst.w	Leg_GamesPlayed(A0)
+*	Bgt.s	.Ok
+*	Adda.w	#Leg_SizeOf,A0
+*	Addq.w	#1,D2
+*	Cmp.w	#NbJoueurs,D2
+*	Blt.s	.Loop
+*	Bra.s	.NoFree
+*.Ok
+*
+************************
+*
+* -LISTE DES FICHIERS A PRENDRE POUR EXECUTER: IMAGES, MUSIQUES, SONS
+*
+* ACTION! est le son #19 de "don't move"
+*
+*********** Choses faites récemment
+*
+* - flashs de l'écran, en partie
+* - nouveaux tests de collision
+* - remise en place des routines 6 joueurs (+palette)
+* - Gestion des bobs 128 couleurs pour les menus
+* - dans le menu options, bas va sur GO
+* - Image d'intro en hires 256 couleurs avec fading parfait.
+* - Debug des anims de fin de niveau
+* - Pousse bombes On/Off
+* - Debug alignement fin menu (plantage micro)
+* - BarrePtr: BUG: premier level: pleins de manques d'affichage
+*   Set3 / BarreDecounter (ligne 3265) + 2140 initlevel
+*  Visiblement ce n'est pas Set3 qui fait défaut (adresse impaire ???)
+* - Touche à choisir pour le volume des sons.
+* - Fading rapide (10) entre les deux menus
+* - SetOne pour changer le type de barre en bas manuellement
+* - BClearBois pour que DON'T MOVE s'efface + son
+* (- cadeau+Bonus téléportation)
+* - Dégradé UNE fois par lancement du jeu
+* - Palette podium déconne 
+* - Init fin menu des stats de jeu global
+* - Apparition micro
+* - Vérifier SoundVol, SoundVolGen Ok
+* - Afficher la jauge en mode teams
+* - Decalage de 4 bits pour digitcopy pour >4 joueurs: 4 et 292 (36.5)
+* - Test bouclage fin level
+* - Changement barre cours de route
+*	Bsr	Aff_All_Gueules
+*	Move.w	Leg_BarreX4(A0),Leg_BarreX(A0)
+*	Move.w	Leg_BarreY4(A0),Leg_BarreY(A0)
+*	Move.w	Leg_BarreBase4(A0),Leg_BarreBase(A0)	
+*	Move.w	Leg_BarreBlocX4(A0),Leg_BarreBlocX(A0)
+* - Manque changement + copies info bar 4 ->6 et inverse
+*   Il faut copier toutes les données présentes dans la barre 4 joueurs !
+*   Surtout: Le timer, le nom du level si il y a, la TETE des joueurs
+* - Si mode 6 joueurs enclenché, on NE REVIENT JAMAIS EN MODE 4 !
+* (Sauf après être revenu au menu bien sûr)
+* - Test requestpodium
+* - 6 joueurs
+* (- Passage 8->4 : Même sprite utilisé 2 fois)
+* - Coder cruncher Huffman
+* (- Génération copperlist pour les couleurs (menus surtout) ? fade:ok )
+* - Debug decruncher
+* - TestLevelEnd: \ seulement en fin de partie !!!
+* - Erreur stats si games <> entre les joueurs
+* - Test MessageWait: ":" et pis c tout
+* (- test sons podium <- Pas glop! à débugger)
+* - non_app_mort marche aussi en mode 6 joueurs: ModeAct
+* - BUGS de flashs: InfoBar 1 plan qui clignote, InfoBar non restaurée
+* (- Press fire : 10...9... etc)
+* (- Problème chargement podium)
+* - Bug sprite retour podium (mais apparition ok): lancement 8to4 ? ou inv ?
+* - Temp Take System : Problemes de flashs menu -> jeu
+* - Manque le press fire
+* - Masque d'utilsation des sprites pour mettre à 0 les restants.
+* - Mode sans musique : LED OFF si c'est ça....
+* - Vérif pas plantage stats (si only une partie ou mémoire)
+* - Regénérer la flamme de bib + tester flam gogo avec bouts dessus
+* - Bug palette retour podium (temporaire)
+* - PROB: SI "\" DEBUT LEVEL, au retour pas de remise à jour de l'écran
+* - Random en fonction mode pour les levels teams et individual
+* - Test autofire par level
+* - Fin longue mèche: bombe inifinie !
+* - Autofire off: timer bomb déconne
+* - Podium que si au moins une partie 
+* - quit podium si 3 appuis sur Esc
+* - Pas carré noir début level pas pris bonus ?
+* - Correction palette sprites 8 joueurs pour correspondance barrejoueurs
+* - son chiottes égalité
+* - Niveau FILL a faire 
+* - Bsr Statistiques pour ESC aussi.
+* - Katytyper: Meilleurs temps par texte
+* - Mettre palette et N° image slideshow en variables
+* - Podium foire
+* - Fin level égalité : anim fait rebooter
+* - Menu blanker (SlideShow)
+* - Musique menu rend pas la mémoire: 55864 octets
+* - Bug menu quand volume <> 64 
+*   EN FAIT: bug quand on quitte le jeu avec écran de bois
+* - Fading musique fin menu
+* - ERREUR_CHIP
+* - 2337: MagiXPalette utilisée: sprites foncés ???
+* - Musique menu coupée quand slide
+* (- Test antibug ambulance (Hard match))
+* - Changer fréquence son fin level
+* - Don't move: sons chiottes ????????? INTERDICTION TEST LEVEL END
+* - Partie comptée que si finie
+* - Interdiction don't move marche pas ! (rapport erreur ci dessus ?)
+* - Ombre titre level
+* - Survivor mode
+* - Pas 2 fois don't move même level même joueur
+* - Conversion en gris et ajustage hauteur pour les stats
+* - Convertir 6 joueurs
+* - Cycle couleurs menu
+* - Ne pas compter de points si on a joué à 1 joueur maxi (ligne 2882)
+* - WaitSpr TO DEL
+* - Cycle menu multitâche
+* - Cycle menu ne dérègle que les couleurs utilisées (TRES MOCHE)
+* (- Si pas assez de mémoire pour tous les sprites, interdiction mode 8 j !!!)
+* - Pas de BOBOff pour le GO de OPTIONS
+* (- Système pour savoir si on a le pousse-bombes)
+* - SPR4ColIdx ????
+* - LegAutoFire		=	1	¿ à définir PAR LEVEL ?
+* - Rnd anims fin level
+* (- long time: mèche ne rétrécit pas???)
+* (- pacman mode)
+* - Pas de podium si on vient de le voir avec \ (si pas de partie depuis)
+* - Statistiques indexées sur le joueur (avec têtes) pour cohérence ci-dessus
+* - START: ajouter fading rapide (+musique) 
+* - Pour le test clavier pendant le podium, il faut mettre un FLAG
+*   Parce que l'animation prend plus d'une VBL, et que l'appui d'une
+*   touche n'est pas toujours enregistré.
+* - Utiliser le tri pour positionner les statistiques en Y
+* - Le rouge dépasse à gauche et le vert à droite stats quand
+*   barre QUE rouge ou QUE verte
+* - ENLEVER Antislash: Bra.s .Ok1 QUAND tests PODIUM TERMINES
+* - Autorisation de toutes les voies pour mode sans musique
+* - Bugs sprites pendant chargement jeu
+* (- Transformation des sprites en bobs pour photo + saisie écran
+*  en fait la photo c'est pour le podium (save iff avec stats))
+* (- Faire double buffer entre les niveaux: clignotement palette + affich
+*		(même technique que dans le menu, ca devrait être simple...)
+* - Centrer nom level + remonter de 1 en Y
+* - Ombre du timer
+* - Au lieu d'arrêter la bombe (2878), il faut tester si le joueur
+* n'est pas en train de marcher face à la bombe, auquel cas la bombe
+* repart en sens inverse (si elle venait sur le Même Axe, X ou Y)
+* - Leg_Offset(A0) sert à rien ???? SI SI pour les bumpers !!!
+* - A cause du test de même bombe, on a le problème de pouvoir
+*   marcher sur la bombe que l'on vient d'arrêter sans la pousser.
+* - Mec arrete bombe en mouvement
+* - Si on appuie sur ESC: Sprites morts.
+* - Faire réapparaître les joueurs quand don't move
+* - Random level quand fin level
+* - Reste un joueur ou tous même équipe: dégèle bombes
+* - Help dans les menus affiche l'écran des bonus
+* - Faire clignoter le milieu du timer
+* - Centrer tout dans les menus (CenterX)
+* (- Sprites.i 1900,2087
+*   rAJOUTER TEST MÊME grosse case à NoMv pour brancher OkMv)
+* - Des fois en FIN de niveau le podium ne se lance pas 'antislash':newlevel?
+*   Modifié, A TESTER
+* - Essayer d'économiser la moitié de la taille des DIM (sauf 4): OK!
+*
+*
+* de 2800 à 7700 points par VBL.
+* Pour copier 6 joueurs: 6*8*24*22=25344= 9 VBL sur A1200 de BASE
+*           
+*
+********************************************************************
+* HOROSCOPE DU 06/02/1998 à 07H00:
+*
+* VERSEAU: Encore beaucoup de choses à faire et très peu de temps
+* pour faire tout ça.
+********************************************************************
+*
+*
+* En ajoutant 1 à chaque Vbl à ValRoutageAct, je peux tenir 20 minutes
+* sans utiliser deux fois la même valeur de routage.
+* 
+*
+* DIM 2: Visible: on y va si il y a:
+* - 0: Rien
+* - 2: Bonus
+* - 3: Bombe (et pousse bombes)
+*
+* On route dans le DIM2 en marquant les cases du DIM1
+* Attention! il semblerait pour l'instant que les cases ne correspondent
+* pas du tout: Petites cases.L <> Grosses cases.W
+* 8 octets <> 2 octets
+*
+* TRUCS FAITS:
+*
+* 03/06/2000 jusqu'à 7H20 du matin dimanche 04/06
+* - Mettre le max de fichiers en chargement et non en incbin pour
+*   avoir un exécutable tout petit !!
+* - Retour au menu principal après bonus: trop de plans ! ou alors mémoire
+*   temporaire effacée 
+* - Bug Ecran des podiums: couleurs des blocs pas bonne !
+* - AutoFire marchait plus: Debug Ext.l + recup éditeur AMOS à jour !
+* - Vérification cohérence des pointeurs menus SURTOUT LEVELS
+* - Bonus maladie pose toutes ses bombes n'existe pas ! (Simple!: FEU=TRUE)
+* - Entrée+ Sortie: 337 Ko perdus !!! <- Vérifier InitMemStack et Free ! 
+*   et chargefchier <- AddMemStack sur chargefichier() ajouté !
+* - Défilement levels: sauter les <Free>
+* - Prefs:Debug Verif pointeurs menus: problème d'alignement sur 4 octets
+* - Prefs:Ecriture marchait plus pour pointage car niveau vide arrêtait save
+* - Enregistrement désactivation levels marche pas
+* - Level <Free> accepté pendant jeu ! = plantage
+* 05/06/2000 Version 17
+* - Touche F1+F2 pour défiler les levels marchent plus ?  + plantages (gui)
+* - Tour de fin: bloc apparaissent pas!
+* - Sécurité sur les gros blocs pour empêcher copie en dehors de l'écran!
+* 08/06/2000 Jeudi soir 0H46
+* - Correction TestBounds() pour que ça rentre dans l'écran
+* - Bug des flammes dans les tuyaux: dépassent en bas et à droite !!!
+*   Le bug c'est que les flammes se DUPLIQUENT !!!!
+* - Amélioration touches: mode Slow ne bloque pas "S" et "P" (tests Vbl-Loop)
+* - Retrouver la touche servant au screenshot! : TAB
+* 11/06/2000 Dimanche soir 2H30
+* - Modif vitesses des flammes Flam_VelocityFlam_Velocity: reglage très bien
+* - Faire marcher CHEAT_ENABLED (youareagreatcoder): restauration après flash et clavier que en ce mode
+* - Entrée+Sortie: manque 1000 octets en mémoire !!! :-)<--- vue de l'esprit ?!
+* - Jauge de chargement Sortie de l'Int VBL !!! (pkoi là dedans ?)   
+* - les flammes dépassent des tuyaux !
+*       -  dans les virages haut-gauche
+*       -  Pas dans les virages bas-droite visiblement
+* 14/06/2000 Mercredi 19H00
+* - Développement micro routage danger
+* - Micro: empêcher le micro de traverser les murs: tests comme humains
+*   Déjà fait: le micro est géré comme un joystick !
+* 18/06/2000 Dimanche 18H29
+* - Contagion de la maladie collique <- à tester
+* - Travail Micro
+* 27/06/2000 Samedi soir 2H45 (Fin 4H47)
+* - Travail Micro: 
+*     Gestion LigCol  fonctionne! + Debug AMOS
+*     Gestion Routage fonctionne! + Debug AMOS
+*     Option Mode VBL: le routage s'arrête en fin au lieu de boucler 
+*     30 boucles = Maxi $23 (=35 cases "vues") sur tableau DYNA 
+* 28/06/2000 Dimanche 15H30
+* - Travail micro:
+*     -Insertion du danger dans le routage, danger maxi traçé + DEBUG AMOS
+*     -Prise en compte de la distance pour augmenter le danger !
+*     -La direction prise est la direction source de BASE
+*     -Toutes les valeurs de routage passées en .B pour gagner de la place
+*     -DEBUG Amos: insertion du visible pour voir les bombes et murs
+* 31/06/2000 Mercredi 22H45
+* - Travail micro:
+*     -Premiers rendus: micro bougeotte
+*     -Micro se jette sur les bombes au lieu de les éviter !
+* 01/06/2000 Jeudi 22H53 (Visite appart avec Jessica + demi en terrasse)
+* - Travail micro:
+*     - Essai de faire s'arrêter le micro à bon escient:
+*       Micro s'arrête dès qu'il se sent en danger! une bombe = mort!
+* 09/06/2000 Dimanche 16H50
+* - Correction bug bonus effacé n'importe où: TestBounds
+* - Micro prend bonus: effacement foire !
+* - Micro se jette sur les bombes !
+* 05/01/2000 Vendredi soir 1H43 Fin J
+* - Statistiques: seuls les joueurs ayant joué sont affichés
+*
+
+
+

@@ -1,0 +1,334 @@
+
+************ STATISTIQUES DE FIN DE JEU (ESC ou PODIUM)
+*
+*
+*
+*
+STATISTIQUES
+	Lea	StatsWork,A1
+	Movea.l	LegoPtr,A0
+	Clr.l	D2	Max de parties jouées
+	Clr.l	D3	Max de bombes posées
+	Clr.l	D4	Max de bonus pris
+	Moveq	#NbJoueurs-1,D0
+.LoopJ	Move.l	Leg_GamesPlayed(A0),D1
+	Cmp.l	D1,D2
+	Bge.s	.Nop
+	Move.l	D1,D2
+.Nop	Move.l	D1,(A1)+
+	*
+	Move.l	Leg_GamesLoose(A0),(A1)+
+	*
+	Move.l	Leg_GamesWon(A0),(A1)+
+	*
+	Move.l	Leg_BombesPosees(A0),D1
+	Cmp.l	D1,D3
+	Bge.s	.Nop2
+	Move.l	D1,D3		
+.Nop2	Move.l	D1,(A1)+
+	*
+	Move.l	Leg_BonusTaken(A0),D1
+	Cmp.l	D1,D4
+	Bge.s	.Nop3
+	Move.l	D1,D4		
+.Nop3	Move.l	D1,(A1)+
+	*
+	Adda.w	#Leg_SizeOf,A0
+	Dbf	D0,.LoopJ
+
+
+	Tst.l	D2
+	Bgt.s	.Ok1
+	Moveq	#1,D2
+.Ok1	
+	Tst.l	D3
+	Bgt.s	.Ok2
+	Moveq	#1,D3
+.Ok2	
+	Tst.l	D4
+	Bgt.s	.Ok3
+	Moveq	#1,D4
+.Ok3	
+
+*
+* Je transforme les données stockées en pourcentage
+* (plus exactement 
+*
+*
+
+	Lea	StatsWork,A1
+	Lea	StatsWork2,A2
+	Moveq	#NbJoueurs-1,D0
+.LoopJP	Move.l	(A1)+,D1		GamesPlayed
+	Mulu.l	#StatsSizeGames,D1
+	Divu.l	D2,D1
+	Move.l	D1,(A2)+		
+	*
+	Move.l	(A1)+,D1		GamesLoose
+	Mulu.l	#StatsSizeGames,D1
+	Divu.l	D2,D1
+	Move.l	D1,(A2)+
+	*
+	Move.l	(A1)+,D1		GamesWon
+	Mulu.l	#StatsSizeGames,D1
+	Divu.l	D2,D1
+	Move.l	D1,(A2)+
+	*
+	Move.l	(A1)+,D1		BombesPosées
+	Mulu.l	#StatsSizeBombs,D1
+	Divu.l	D3,D1
+	Move.l	D1,(A2)+
+	*
+	Move.l	(A1)+,D1		BonusTaken
+	Mulu.l	#StatsSizeBonus,D1
+	Divu.l	D4,D1
+	Move.l	D1,(A2)+
+	Dbf	D0,.LoopJP
+
+*
+* 
+* Je lis et trace
+*
+*
+******** DEBUT DU TRACAGE A L'ECRAN
+
+	Move.w	#StatsTitreX1,D0	
+	Move.w	#StatsTitreY,D1
+	Move.l	#Phrase_Titre1,StatsMem1
+	Bsr	LaunchGene
+
+	Move.w	#StatsTitreX2,D0	
+	Move.w	#StatsTitreY,D1
+	Move.l	#Phrase_Titre2,StatsMem1
+	Bsr	LaunchGene
+
+	Move.w	#StatsTitreX3,D0	
+	Move.w	#StatsTitreY,D1
+	Move.l	#Phrase_Titre3,StatsMem1
+	Bsr	LaunchGene
+
+	Move.w	#StatsTitreX4,D0	
+	Move.w	#StatsTitreY,D1
+	Move.l	#Phrase_Titre4,StatsMem1
+	Bsr	LaunchGene
+
+	Move.w	#StatsTitreX5,D0	
+	Move.w	#StatsTitreY,D1
+	Move.l	#Phrase_Titre5,StatsMem1
+	Bsr	LaunchGene
+
+*
+
+	Move.w	#StatsY,StatsYBase
+	Lea	StatsWork,A2	Valeurs exactes
+	Lea	StatsWork2,A1	Valeurs en pourcentage
+	Moveq	#NbJoueurs-1,D5
+.LoopJT	Move.w	StatsYBase,D1
+	Move.w	D1,D3				Y1
+	Add.w	#StatsHautJauge-1,D3		Y2
+	Move.w	#StatsBaseX1,D0			X1
+	**********************
+	Move.l	(A2)+,StatsMem3
+	Move.l	(A1)+,D2		GamesPlayed
+	Move.w	D2,StatsMem4
+	Bne.s	.OkB0
+	* Aucune partie jouée: on affiche RIEN
+	Adda.w	#4*4,A2
+	Adda.w	#4*4,A1
+	Bra	.NoStatsForHim
+	*Bra.s	.NoB0
+.OkB0	Add.w	D0,D2				X2
+	Move.w	#StatsCoul_Jaune,D6			C
+	Bsr	LaunchBAROmbre
+	**********************
+.NoB0	Move.l	(A2)+,D7
+	Move.l	(A1)+,D2		GamesLoose
+	Beq.s	.NoB1
+	Add.w	D0,D2				X2
+	Move.w	#StatsCoul_Rouge,D6			C
+	Bsr	LaunchBAR
+	*
+	Move.w	D2,D0
+	*Subq.w	#1,D0
+	Move.w	#StatsCoul_RougeF,D6
+	Bsr	LaunchBAR		Limite jauge !	
+.NoB1	
+	Movem.l	D0-D1,-(A7)
+	Move.w	#StatsBaseX4,D0
+	Bsr	LaunchTXT
+	Movem.l	(A7)+,D0-D1
+
+	**********************
+	Move.w	#StatsBaseX1,D2		X2
+	Add.w	StatsMem4,D2
+	Move.l	(A2)+,D7
+	Move.l	(A1)+,D0		GamesWon
+	Beq.s	.NoB2
+	Neg.w	D0		-Taille
+	Add.w	D2,D0		Fin-Taille	X1
+	Move.w	#StatsCoul_Vert,D6			C
+	Bsr	LaunchBAR
+	*
+	Move.w	D0,D2
+	*Addq.w	#1,D2
+	Move.w	#StatsCoul_VertF,D6
+	Bsr	LaunchBAR		Limite jauge !	
+.NoB2
+
+	Movem.l	D0-D1,-(A7)	Parties gagnées
+	Move.w	#StatsBaseX5,D0
+	Bsr	LaunchTXT
+	Movem.l	(A7)+,D0-D1
+
+	Movem.l	D0-D1,-(A7)	Parties jouées (après les BAR !!!)
+	Move.l	StatsMem3,D7
+	Move.w	#StatsBaseX1,D0
+	Bsr	LaunchTXT
+	Movem.l	(A7)+,D0-D1
+
+	**********************
+	Move.w	#StatsBaseX2,D0	Bombs		X1
+	Move.w	#StatsBaseX2+StatsSizeBombs,D2
+	Move.w	#StatsCoul_Gris,D6			C
+	Bsr	LaunchBAROmbre
+
+	Move.l	(A2)+,D7
+	Move.l	(A1)+,D2		Bombs
+	Beq.s	.NoB3
+	Add.w	D0,D2				X2
+	Move.w	#StatsCoul_Rouge,D6			C
+	Bsr	LaunchBAR
+	*
+	Move.w	D2,D0
+	*Subq.w	#1,D0
+	Move.w	#StatsCoul_RougeF,D6
+	Bsr	LaunchBAR		Limite jauge !	
+
+	Movem.l	D0-D1,-(A7)
+	Move.w	#StatsBaseX2,D0
+	Bsr	LaunchTXT
+	Movem.l	(A7)+,D0-D1
+.NoB3
+	**********************
+	Move.w	#StatsBaseX3,D0	Bonus		X1
+	Move.w	#StatsBaseX3+StatsSizeBonus,D2
+	Move.w	#StatsCoul_Gris,D6			C
+	Bsr	LaunchBAROmbre
+
+	Move.w	#StatsBaseX3,D0			X1
+	Move.l	(A2)+,D7
+	Move.l	(A1)+,D2		Bonus
+	Beq.s	.NoB4
+	Add.w	D0,D2				X2
+	Move.w	#StatsCoul_Rouge,D6			C
+	Bsr	LaunchBAR
+	*
+	Move.w	D2,D0
+	*Subq.w	#1,D0
+	Move.w	#StatsCoul_RougeF,D6
+	Bsr	LaunchBAR		Limite jauge !	
+
+	Movem.l	D0-D1,-(A7)
+	Move.w	#StatsBaseX3,D0
+	Bsr	LaunchTXT
+	Movem.l	(A7)+,D0-D1
+.NoB4
+	**********************
+	Add.w	#StatsPasY,StatsYBase	Next Y
+.NoStatsForHim
+	Dbf	D5,.LoopJT
+
+	Jsr	CaptureEcran
+
+	RTS
+
+*********	
+*
+* BAR (D0,D1)-(D2,D3),D6
+*
+*
+LaunchBAR	Move.l	#SizePlan,VarSizePlan
+	Move.l	#SizeLine,VarSizeLine
+	Movem.l	D0-D7/A0-A6,-(A7)
+	Moveq	#7,D7		BAR NORMAL
+	Movea.l	Planar,A2
+	Jsr	BAR
+	Movem.l	(A7)+,D0-D7/A0-A6
+	RTS
+
+LaunchBAROmbre
+	Move.l	#SizePlan,VarSizePlan
+	Move.l	#SizeLine,VarSizeLine
+
+	Movem.l	D0-D7/A0-A6,-(A7)
+
+	Movem.l	D0-D4/D6,StatsMem2	Max 16 .L
+	Move.w	#StatsCoul_GrisF,D6
+	Moveq	#0,D4
+	Moveq	#7,D7		BOX pour l'ombre
+	Movea.l	Planar,A2
+	Addq.w	#1,D0
+	Addq.w	#1,D1
+	Addq.w	#1,D2
+	Addq.w	#1,D3
+	Bsr	BAR_OUTLINE
+
+	Movem.l	StatsMem2,D0-D4/D6
+	Moveq	#7,D7		BAR NORMALE
+	Movea.l	Planar,A2
+	Jsr	BAR
+	
+	Movem.l	(A7)+,D0-D7/A0-A6
+	RTS
+
+* D0: Position X (pixels)
+* D1: Position Y (pixels)
+
+*********	
+*
+* D7: Valeur à afficher 
+*
+*
+LaunchTXT	*RTS
+	Movem.l	D2-D7/A1-A3,-(A7)
+	Lea	StrWork,A3	PREPARATION
+	Move.l	D7,D3
+	Moveq	#6,D6	N chiffres
+	Move.b	#0,D7
+	Bsr	STR	* Ne modifie pas : D0-D2/A0-A1/A3-A7
+	Bsr	BCopPh	* Utilise D2/A2/A3
+	Clr.b	(A3)
+	Move.l	#StrWork,StatsMem1
+	Movem.l	(A7)+,D2-D7/A1-A3
+	Bsr	LaunchGene
+	RTS
+
+*******
+*
+* D0: X
+* D1: Y
+* A1: Adresse phrase
+*
+LaunchGene
+	*RTS
+	Movem.l	D0-D7/A0-A6,-(A7)
+	Move.l	StatsMem1,A1
+	Move.l	#SizePlan,VarSizePlan
+	Move.l	#SizeLine,VarSizeLine
+	Lea	FTinyTxt8,A0	PRINT
+	Movea.l	Planar,A2
+	Moveq	#7,D7
+	Addq.w	#1,D0
+	Addq.w	#2,D1
+	Movem.l	D0-D2/D7/A0-A2,-(A7)
+	Move.w	#StatsCoul_GrisF,D2
+	Jsr	GPrint
+	Movem.l	(A7)+,D0-D2/D7/A0-A2
+	Subq.w	#1,D0
+	Subq.w	#1,D1
+	Move.w	#StatsCoul_Blanc,D2
+	Jsr	GPrint
+	Movem.l	(A7)+,D0-D7/A0-A6
+	RTS
+
+

@@ -1,0 +1,287 @@
+
+*************************************************************************
+*									*
+*   Bribes de programme pour l'intelligence artifielle de LegoBlast.	*
+*									*
+*************************************************************************
+*
+*
+****************************************************************************************
+*  REGLE:      Il vaut mieux faire une routine d'ia nulle que pas de routine du tout.  *
+*										       *
+* 		-> Trouver la technique la plus simple point de vue développement.     *
+****************************************************************************************
+*
+* Au lieu de faire une copie globale de la taille du tableau, il vaut mieux faire une liste
+* dans un tableau des cases atteintes en fonction de la portee de la flamme.
+*
+* Si on limite la portee des flammes: 
+*	- Acceleration de la routine pour les grosses explosions, mais non détection des flammes par le micro
+*	- diminution de la taille prise en mémoire pour tous les précalcs... (Mais bon, 60K en fast, c peu...)
+*	!La taille mini de portee doit au moins atteindre les bouts de l'ecran sans tuyaux, soit 17.
+*
+*
+* Le tableau "Dist" donne le nombre de cases à affecter en X et en Y en fonction de la portee de la bombe.
+*
+*
+*
+*
+
+*************** Utilisation de la routine ci-dessous
+
+Explo	* bombe prete a exploser: on l'ajoute
+	Moveq	#%111,D4
+	Move.l	Bomb_Offset(A0),D1
+	Move.w	Bomb_Len(A0),D0
+	Bsr	MAJBomb_Ia_1s
+	RTS
+
+
+MovX 	* AU DEBUT DU MOUVEMENT en X: on vire la trainee Y 
+	Moveq	#%001,D4
+	Move.l	Bomb_Offset(A0),D1
+	Move.w	Bomb_Len(A0),D0
+	Bsr	MAJBomb_Ia_1s
+	RTS
+	
+MovY 	* AU DEBUT DU MOUVEMENT en Y: on vire la trainee X
+	Moveq	#%010,D4
+	Move.l	Bomb_Offset(A0),D1
+	Move.w	Bomb_Len(A0),D0
+	Bsr	MAJBomb_Ia_1s
+	RTS
+
+ChgMov	* La bombe CHANGE DE MOUVEMENT:
+	* 1/ on 
+
+
+	* 
+	* QUESTION: Pourquoi je me prendrais la tete ?
+	* Ce systeme de gestion des bombes est efficace mais risque
+	* de ramer si bcp de bb bougent.
+	* Il suffit de ne pas mettre a jour une bombe qui se deplace:
+	* MovX: On enleve la trace Y mais ON N'EN RECREEE PAS UNE A CHAQUE DEPLACEMENT !
+	*
+	* Si une bombe passe de 5s a 1s en plein mouvement: C'est l'occasion ou jamais
+	* de remettre a jour: On enleve la trace restante du sens de direction (MovX:Trace X) du tableau "5S",
+	* puis on recréée une trace en X dans le tableau direction "1S" ! 
+	* (en initialisant l'offset de trace Y à -1
+	* pour que le programme n'essaye pas d'effacer cela plus tard.)
+	*
+	* Si une bombe en mouvement explose: on créée la trace manquante (Y) pour laisser une chance de fuir
+	* au micro (si infime soit-elle!).
+	*
+	* Comme ca a la fin de la disparation des 4 flammes d'une explosion, il ne reste plus qu'a appeler
+	* la routine:
+	
+FinExplo * Bombe terminé d'exploser (plus de flammes): on l'enlève
+	Moveq	#%011,D4		les 2 traces seront la a coup sur.
+	Move.l	Bomb_Offset(A0),D1
+	Move.w	Bomb_Len(A0),D0
+	Bsr	MAJBomb_Ia_1s
+	RTS
+
+
+	*
+
+*
+* Attention! quand une bombe bouge par exemple en X et que l'on ne vire pas la trainee en X, 
+* cela demande à ce que l'on mémorise la position de la bombe au moment ou l'on a copie la
+* trainee en X pour etre sur de bien tout restaurer.
+* Simple: Il suffit de copier les offsets X et Y dans la structure de la bombe
+* (ou flamme a la fin) au moment ou l'on ajoute dans le tableau.
+* Pour faire cela il faudrait non pas passer l'offset et la porte de la bombe en parametre, mais
+* le pointeur sur la bombe. Comme ca juste apres le test d'ajout/enlevement, on ajoute en fonction
+* du X/Y
+*
+
+*************************
+*
+*
+* Une bombe entre dans sa phase <5s, on la copie dans le tableau de calculs.
+*
+* !Dans le tableau de calculs, on ne retrouve que des cases entières, pas de demi-cases !
+* Cependant, pour avoir la compatibilite, on utilise la meme taille que pour tous les dim: 64x64 en 4 octets/case
+*
+* A5: Structure de la bombe.
+* D4: code: 
+*	%100 : Ajouter		%010 : En X
+*	%000 : Soustraire	%001 : En Y 
+*	(Exemple: %110: ajouter en X)
+*
+* Données à faire sortir de la structure de bombe.
+* D0: Portee bombe (en demi-cases, comme dans structures bombes et flammes)
+* D1: Offset bombe.L (valeur *4 prete pour acces a un dim)
+*
+* Si on est en mode soustraction, cette routine va chercher toute seules les offsets
+*	
+*
+*
+MAJBOMB_IA_5S
+	Lea	TabBomb5s,A1
+	Bra.s	MAJBOMB_IA
+MAJBOMB_IA_1S
+	Lea	TabBomb1s,A1
+MAJBOMB_IA
+	Moveq	#1,D3		Il ne me reste plus que les 2 boucles à faire.
+	Btst	#2,D4
+	Beq.s	.SUB
+	****************
+.ADD	Lea	LevelIdx12,A0	*** ADD!!!
+	Move.l	(A0,D1.l),A0	Adresse 
+	Movem.l	(A0)+,A2-A3	Adresse listes X et Y
+	Bclr	#0,D0		3-> 2: 2 petites, donc 1 grosse, offset=1*2*.w=4 donc *2
+	Cmp.w	#17,D0	on pourait limiter a 32 par un AND.W, plus rapide, plus propre, mais moins précis.
+	Ble.s	.OkPS3
+	Move.w	#17,D0
+.OkPS3	Lea	(A0,D0.w*2),A0	
+	Movem.w	(A0)+,D0-D1	D0: Nombre de données à lire dans les listes X et Y
+	******
+	Btst	#1,D4		
+	Beq.s	.NoX
+	Move.l	Bomb_Offset(A5),Bomb_MemIAX(A5)
+	Subq.w	#1,D0
+	Blt.s	.NoX		Si il y a 0 données à lire pour une direction (entre 2 murs, ou portee 0).
+.LoopX	Move.l	(A2)+,D2	Lecture liste X
+	Add.w	D3,(A1,D2.l)	Ecriture tableau: Incrémentation nombre croisements
+	Dbf	D0,.LoopX	
+.NoX	******
+	Btst	#0,D4
+	Beq.s	.NoY
+	Move.l	Bomb_Offset(A5),Bomb_MemIAY(A5)
+	Subq.w	#1,D1
+	Blt.s	.NoY
+.LoopY	Move.l	(A3)+,D2	Lecture liste Y
+	Add.w	D3,(A1,D2.l)	Ecriture tableau: Incrémentation nombre croisements
+	Dbf	D1,.LoopX	
+.NoY	RTS
+	****************
+.SUB	Btst	#1,D4		*** SUB(X) !!!
+	Beq.s	.NoXA
+	Move.l	Bomb_MemIAX(A5),D1
+	Lea	LevelIdx12,A0	Index
+	Move.l	(A0,D1.l),A0	Adresse 
+	Movem.l	(A0)+,A2-A3	Adresse listes X et Y
+	Bclr	#0,D0		3-> 2: 2 petites, donc 1 grosse, offset=1*2*.w=4 donc *2
+	Cmp.w	#17,D0	on pourait limiter a 32 par un AND.W, plus rapide, plus propre, mais moins précis.
+	Ble.s	.OkPS2
+	Move.w	#17,D0
+.OkPS2	Lea	(A0,D0.w*2),A0	
+	Movem.w	(A0)+,D0-D1	D0: Nombre de données à lire dans les listes X et Y
+	Subq.w	#1,D0
+	Blt.s	.NoXA		Si il y a 0 données à lire pour une direction (entre 2 murs, ou portee 0).
+.LoopXA	Move.l	(A2)+,D2	Lecture liste X
+	Sub.w	D3,(A1,D2.l)	Ecriture tableau: Incrémentation nombre croisements
+	Dbf	D0,.LoopXA	
+.NoXA	******
+	Btst	#0,D4		*** SUB(Y) !!!
+	Beq.s	.NoYA
+	Move.l	Bomb_MemIAY(A5),D1
+	Lea	LevelIdx12,A0	Index
+	Move.l	(A0,D1.l),A0	Adresse 
+	Movem.l	(A0)+,A2-A3	Adresse listes X et Y
+	Bclr	#0,D0		3-> 2: 2 petites, donc 1 grosse, offset=1*2*.w=4 donc *2
+	Cmp.w	#17,D0	on pourait limiter a 32 par un AND.W, plus rapide, plus propre, mais moins précis.
+	Ble.s	.OkPS1
+	Move.w	#17,D0
+.OkPS1	Lea	(A0,D0.w*2),A0	
+	Movem.w	(A0)+,D0-D1	D0: Nombre de données à lire dans les listes X et Y
+	Subq.w	#1,D1
+	Blt.s	.NoYA
+.LoopYA	Move.l	(A3)+,D2	Lecture liste Y
+	Sub.w	D3,(A1,D2.l)	Ecriture tableau: Incrémentation nombre croisements
+	Dbf	D1,.LoopXA	
+.NoYA	RTS			*** ADD!!! (Pour le ADD D1 est le meme pour X et Y, en parametre)
+
+
+
+	***********************************	Données sur les Level (précalc)
+
+LvlIdx12	* Pour le level 12
+	...
+	Dc.l	Dist12_450	Les offsets vont de 4 en 4, et les data aussi (Dc.l)
+	Dc.l	Dist12_454
+	Dc.l	Dist12_458	
+	...
+
+
+DIST12_450	* Les distances entre chaque Dc.w sont de 2 petites cases (1 grosse)
+	Dc.l	ListX12_450
+	Dc.l	ListY12_450
+	Dc.w	2	ListX
+	Dc.w	2	ListY
+	Dc.w	4	X
+	Dc.w	4	Y
+	Dc.w	5	X (1 branche en moins)
+	Dc.w	6	Y
+	Dc.w	6	X
+	Dc.w	7	Y (1 branche en moins)	
+	Dc.w	8	X (Création flamme dans tuyau)
+	Dc.w	8	
+	Dc.w	9	X
+	Dc.w	9
+	Dc.w	10	X
+	Dc.w	10
+	Dc.w	10	Fin des 2 X
+	Dc.w	11
+	Dc.w	10	Fin des 2 X
+	Dc.w	12
+	Dc.w	10	Fin des 2 X
+	Dc.w	13
+	Dc.w	10	Fin des 2 X
+	Dc.w	14
+	Dc.w	10	Fin des 2 X
+	Dc.w	14
+	Dc.w	10	Fin des 2 X
+	Dc.w	14
+	* recopier ces 2 lignes jusqu'aux cases de portee >=17 !:
+	* jusqu'à la porté maximale de la flamme détectée par le micro.
+	Dc.w	10	Fin des 2 X
+	Dc.w	14	Fin des 2 Y
+	
+	
+LISTX12_450	
+	Dc.l	4504	D.1/Droite
+	Dc.l	450	G.1/Gauche
+	Dc.l	4508	D.2/Droite meurt après ca
+	Dc.l	446	G.2
+	Dc.l	442	G.3
+	Dc.l	438	G.4
+	Dc.l	182	G.5/tuyau vers le haut
+	Dc.l	694	G.5/ET DUPLICATION VERS LE BAS !
+	Dc.l	698	G.6/duplication haut morte, +tuyau vers droite pour bas
+	Dc.l	702	G.7
+	* ... 2*50*2*2=400 octets + 4*50 = 600 octets par level au maximum 
+	* (si la porte de chaque bout de flamme arrive a 50 cases).
+
+
+
+*
+*
+*
+* Bon, maintenant que j'ai la routine qui sert à tenir à jour les tableaux de danger,
+* il me faut trouver un algorithme pour les exploiter.
+* Solution 1: Routage: Seule solution pour détecter un cul de sac.
+* Solution 2: routage simplifie: ligne droite et 1 virage: gauche ou droite si vers le haut.
+* Comme 
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+
+
+
+

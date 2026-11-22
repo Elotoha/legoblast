@@ -1,0 +1,101 @@
+
+	Lea	PalSource,A0
+	Lea	PalCible,A1
+	Lea	TravVec,A2
+	Lea	TravAct,A4
+	Moveq.w	#4,D0
+	Move.w	#20,D1
+	
+
+
+*	
+****************
+*
+*
+*  A0: Palette Source
+*  A1: Palette cible
+*  A2: Adresse de travail (4*3*Nb couleur) pour les vecteurs
+*  D0: Nombre de couleurs
+*  D1: Nombre d'étapes .W
+*  A4: Couleurs actuelles (.L)  (3*4*Nb couleur)
+*	
+FadeBetween
+	Movea.l	A0,A6
+	Movea.l	A2,A3	Sauve adresse vecteurs
+	Movea.l	A4,A5	Sauve adresse couleurs
+	Subq.w	#1,D0
+	Move.l	D0,D2
+.Precalc	Move.l	(A6)+,D5		Lecture source
+	Move.l	(A1)+,D6		Lecture cible
+
+	Moveq	#2,D7
+.Couls	Clr.l	D3
+	Move.b	D6,D3		Lecture Blue,Green,Red
+	Clr.l	D4
+	Move.b	D5,D4
+	Swap	D4
+	Move.l	D4,(A5)+	<-- Couleur actuelle
+	Sub.b	D5,D3
+	Ext.w	D3	D3.b -> D3.l
+	Swap	D3
+	Divs.w	D1,D3	<---- Div par nombre d'étapes
+	Move.l	D3,(A3)+	<- On sauve les vecteurs Blue,Green,Red
+	Lsr.l	#8,D5
+	Lsr.l	#8,D6
+	Dbf	D7,.Couls
+	Dbf	D2,.Precalc			
+
+
+	Clr.b	Number
+.Vbl
+	*VblWait	#10
+
+	Movea.l	A2,A3	Sauve adresse vecteurs
+	Movea.l	A4,A5	Sauve adresse couleurs
+
+	Move.w	D0,D2
+.Fade
+	Move.l	(A5),D3	Couleur actuelle	BLUE
+	Add.l	(A3)+,D3	+ Vecteur
+	Move.l	D3,(A5)+
+	Swap	D3
+	Move.b	D3,Blue
+	Move.l	(A5),D3	Couleur actuelle	GREEN
+	Add.l	(A3)+,D3	+ Vecteur
+	Move.l	D3,(A5)+
+	Swap	D3
+	Move.b	D3,Green
+	Move.l	(A5),D3	Couleur actuelle	RED
+	Add.l	(A3)+,D3	+ Vecteur
+	Move.l	D3,(A5)+
+	Swap	D3
+	Move.b	D3,Red		
+	Add.b	#1,Number
+
+	*Bsr	Colour
+	
+	Dbf	D2,.Fade
+	Dbf	D1,.Vbl
+	
+	RTS
+
+	
+
+PalSource	Dc.b	0,5,70,9
+	Dc.b	0,3,9,255
+	Dc.b	0,54,89,1
+	Dc.b	0,254,22,48
+PalCible	Dc.b	0,22,37,7
+	Dc.b	0,3,9,255
+	Dc.b	0,48,66,198	
+	Dc.b	0,4,65,188
+TravVec	Ds.l	100
+TravAct	Ds.l	100
+
+
+Number	Dc.b	0
+RGB	Dc.b	0
+Red	Dc.b	0
+Green	Dc.b	0
+Blue	Dc.b	0
+

@@ -1,0 +1,608 @@
+
+Pour faire un ordinateur dans LegoBlast:
+
+En fonction de tout ce à quoi j'ai pensé, je ne vais
+plus chercher de nouvelles solutions mais plus simplement 
+utiliser une des solutions qui me paraissent les plus rapides 
+à programmer tout en étant relativement puissantes.
+
+
+A moins que quelques modifications ne simplifient de beaucoup
+ma tache:
+
+1/ L'ordinateur ne se jette jamais sur une flamme:
+   Test tout bête du contenu de la case cible.
+
+2/ Ce n'est pas l'ordinateur qui ve regarder les flammes mais
+les flammes qui vont regarder l'ordinateur, et lui dire
+si elles arrivent sur lui ou sur sa route prévue.
+
+3/ De ce fait l'ordinateur aura peur des flammes même à travers
+les murs: Gain de temps machine très important.
+
+4/ Les bombes vont prévenir l'ordinateur.
+
+5/ On ignore l'ancienne technique qui semblait très performante mais
+qui nécessitait un maximum de mémoire constitant à établir une liste
+des cases dangereuses si une bombe se trouve sur chacune des cases.
+Cela oblige à traiter toutes les bombes à chaque fois, et nécessitait
+de gérer les tuyaux en simulation etc... très dur.
+
+ 
+Deux tableaux: 
+
+X(18) et Y(15)
+
+Chaque bombe qui se déplace incrémente et décrémente les
+valeurs dans ces tableaux, de sorte que l'on sait tout de suite
+si on est en face d'une bombe ou pas.
+
+Il suffit de copier les bombes dans les structures seulement si
+elle est limite d'explosion.
+
+5/ Le plus gros problème semble n'être solvable que pas 
+une routine de routage: celle de la fuite devant un danger.
+
+L'ordinateur route un peu, genre 4 pas, et il établit une liste
+des positions sur lesquelles il peut aller et qui sont sans danger.
+
+La direction de départ qui lui permet le plus de mouvements est
+privilégiée. Il ne bouge pas si aucune case n'est sûre, sauf
+si la case sur laquelle il est n'est pas sûre non plus.
+Dans ce cas il ignore les dangers et se déplace suivant son routage
+si possible vers une case sans danger, sinon après un angle.
+
+Comme ca il ne pourra pas être bloquée bêtement par une bombe qui
+ne le met pas en danger.
+
+
+* A faire attention: qu'il ne change pas de direction sans arrêt
+lorsqu'il "hésite" entre haut et bas par exemple.
+
+4 cases en hauteur, sa position = 2, il va aller vers 3 car
+plus de place, et retour... Il faut limiter ceci ou plus simplement
+augmenter la zone "visible" : la zone de routage.
+
+
+
+
+
+Avantages de cette technique:
+-----------------------------
+
+- Les bombes sont évitées même si elles sont en dehors de la
+  zone de routage, ainsi que les flammes.
+-
+-
+
+Inconvénients:
+--------------
+
+- Je retombe sur le problème de l'apparation des bombes dans le tableau
+de danger seulement en fonction du temps qu'il leur reste avant d'exploser,
+avec la technique des 2 tableaux et surtout les réactions en chaîne qui
+peuvent être imprévisibles.
+
+
+
+Solutions proposées pour palier ces défauts:
+--------------------------------------------
+
+- Faire la technique des tableaux X et Y, mais en incluant une valeur
+désignant la valeur la plus petite avant explosion. dans cette colonne,
+ou dans cette ligne.
+Pbl: quand une bombe explose, il faut retrouver la plus petite valeur.
+
+OU ALORS:
+
+- Je ne m'occupe pas du tout de cet aspect de l'IA, et je gère simplement
+comme dit plus haut:
+	* TOUTES les bombes apparaissent dans les tableaux X et Y
+	* Les temps d'explosion sont négligés.
+	* Le joueur fait ainsi:
+	1/ Routage simple et rapide avec marquage du danger des cases
+	ATTENTION! Ce marquage n'est pas effacé à la prochaine VBL mais
+  	incrémenté, de sorte qu'une case qui est dangereuse le devient
+	de plus en plus... <- INUTILE si la zone de routage est petite.
+	Mais une case non dangereuse devient de danger 0
+	!!! Si une bombe fait incrémenter le danger des cases qui lui sont
+	contigües et qu'elle se met en mouvement, les cases resteront
+	dangereuses à tord ! Je ne dois pas pouvoir faire cela.
+	Plutôt: Danger=Danger Or $FF.b
+
+	2/ On essaye d'éviter le danger.   
+        0        X XAX X      |
+        1         *95B        |
+        2        XJX1XCX      |   o: Joueur
+        3        I84o26D*     |   *: Bombe
+        4        XKL3XEX      |   X: Mur
+        5          F7G        |   1-K: N° de la case routée
+        6        X*XHX X      |
+                 abcdefgh
+
+
+Lignes:
+0 0
+1 1
+2 0
+3 1
+4 0
+5 0
+6 1
+
+Colonnes:
+a 0
+b 2
+c 0
+d 0
+e 0
+f 0
+g 0
+h 1
+
+Cases de routage:
+1 d2 0
+2 e3 1
+3 d4 0
+4 c3 1
+5 d1 1
+6 f3 1
+7 d5 0
+8 b3 3
+9 c1 1
+A d0 0
+B e1 1
+C f2 0
+D g3 1
+E f4 0
+F c5 0
+G e5 0
+H d6 1
+I a3 1
+J b2 2
+K b4 2
+L c4 0
+
+Ordre:
+1	0	Total danger=3	
+  5	1			Etape 1: Danger
+    9	1
+    A	0
+    B	1
+2	1	Total danger=3	Etape 0: Danger
+  6	1
+    C	0
+    D	1
+    E	0
+3	0	Total danger=1
+  7	0
+    F	0
+    G	0
+    H   1			Etape 2: Danger
+4	1	Total danger=9	Etape 0: Danger
+  8	3
+    I	1
+    J	2
+    K   2 
+  L     0
+
+Classement: Etape,Danger
+
+3,7,H:	Etape 2, Total 1
+1,5:	Etape 1, Total 3
+2:	Etape 0, Total 3
+4:	Etape 0, Total 9
+
+En fait nous n'avons aucun besoin de faire un classement, il suffit 
+de rechercher l'étape la plus grande ayant le total le plus petit.
+
+Si l'étape la plus grande = 0, alors on teste la case sur laquelle on est:
+- Si le danger=0, on ne bouge pas
+- Si le danger>0, on prend la direction de la case vide la plus proche.
+
+Si le danger des cases qui continuent tout droit=0, alors on y va.
+
+On teste de la façon suivante:
+- Routage en face de nous
+- Routage à notre gauche	(Gauche-Droite à intervertir
+- Routage à notre droite	quelquefois pour éviter de tourner en rond)
+- Routage derrière nous
+
+Dès que l'on trouve un total danger=0, on y va.
+
+
+Infos à ramasser:
+-----------------
+
+Case(X,Y).Direction  (Direction de départ, en DX et DY)
+
+Direction_Danger_Plus_Petit=-1		Direction à prendre au départ
+Danger_plus_petit=50			Danger plus petit si pas case vide
+
+Direction_Etape_Plus_Grande=-1		Direction à prendre au départ
+Etape_plus_Grande=0			Etape la plus grande pour test=0
+
+Direction_Case_Vide=-1			Affecté UNE fois (Première case vide)
+
+
+'*** Ces deux variables servent à optimizer le routage:
+' il ne sert à rien de continuer à chercher après un passage par des cases
+' très dangereuses.
+
+Direction_Danger_Plus_Grand_Pour_Cette_Etape
+Danger_Le_Plus_Grand_Pour_Cette_Etape
+
+
+
+NOTE: en fait il ne s'agit pas d'un vrai routage, parce que je ne pose
+pas dans les cases d'information concernant la position de laquelle
+vient une entité. Tout ce qui m'intéresse c'est de noter pour les dangers et
+les cases éventuellement vides la direction de départ.
+
+Je n'ai besoin de poser une information dans les cases hormis de les marquer
+comme étant pénétrées, sans quoi j'aurai le risque de router plusieurs
+fois la même case, et je n'ai pas besoin de ça en plus pour bouffer
+du temps machine ! 
+
+Calcul du nombre de cases routées en fonction du niveau de routage, si
+aucun obstacle n'est rencontré:
+
+
+
+
+
+
+PENDANT le routage, si j'ai déjà trouvé une case libre, je ne route pas
+le danger le plus grand.
+
+
+Choix destiné à être définitif:
+-------------------------------
+
+Le routage se fera à chaque fois que l'ordinateur aura à réfléchir.
+En effet, dans le cas contraire il faudrait sauvegarder les tableaux de bombes
+en X et Y ainsi que le tableau dans lequel il route, parce que son routage
+pourrait se révéler impossible si une bombe vient se placer sur la trajectoire
+de la route acceptée.
+
+En fait ce n'est pas à chaque Vbl, mais à chaque fois que l'ordinateur
+doit faire un choix:
+- il se cogne dans un obstacle, il s'arrête et route
+
+Il me semble maintenant évident que je vais choisir la technique la plus
+simple pour mettre les bombes dans le tableau: 
+C'est à dire que je ne vais y mettre que les bombes immobiles, et que je ne
+vais gérer que les grosses cases.
+Pour les flammes idem: j'ajoute 9 au danger lorsque une bombe explose
+pour la ligne et la colonne, et j'enlève 10 lorsque l'explosion est finie.
+
+Pour le routage: je peux limiter à 4 niveaux, mais il serait plus judicieux
+peut-être de limiter au nombre de cases routées: 32.
+Comme ca si une branche ou une autre de routage est arrêtée, il cherchera
+plus loin...
+
+Il faudrait prendre en compte les couloirs et culs-de-sac dangereux à éviter.
+Mais ce n'est pas facile !
+
+
+Est-il utile de préciser que les tuyaux ne seront pas gérés ?...
+
+
+
+Pour poser les bombes:
+----------------------
+
+Si une chose est sûre, c'est que je ne vais pas développer une routine
+de routage spécialement pour aller poser des bombes, je vais donc
+utiliser la technique du posage de bombes "en passant", c'est à dire
+que si l'ordinateur se dirige vers une case libre qui n'est ni sur la
+même ligne ni sur la même colonne que là où il est actuellement, il
+peut poser une bombe.
+
+Il pose quand bombe devant des murs destructibles.
+
+On pourrait lui interdire de poser une bombe sur une case
+exposée à un danger de colonne s'il se dirige en X ou un danger
+de ligne s'il se déplace en Y.
+Comme ça il éviterait de miner son parcours.
+
+
+
+ESSAI D'ALGORITHME DE ROUTAGE
+-----------------------------
+
+	Théoriquement, on a une liste de points, on la traite,
+les points sont supprimés et remplacés par les suivants.
+Cela fait 2 listes...
+
+
+64*32*4 : off=(Y*64+X)*4
+64*16*2 : off=Y*64+X
+
+Attention ! les tableaux de danger en X et Y sont des grosses cases,
+mais leur capacité est celle des petites .W, pour adressage simple.
+il suffira de faire un And pour supprimer le bit de droite.
+
+.W+.w = 1 case pour le tableau des dangers en X =.L*20=80
+.W = 	1 case pour le tableau des dangers en Y =.B*20=20
+
+J'ai une seule adresse pour les dangers en X et en Y: l'offset des dangers:
+- Offset danger X=0
+- Offset danger Y=80
+Total taille = 100 octets
+
+Dim routage = 64*16*2
+
+
+*
+* Format info.L par point dans liste:
+*
+* 0/1      1 bit:    1 si point issu d'un point de danger
+* 0000011  2 bits:   direction 0-3 de départ 
+* .B	   1 octet:  Total du danger rencontré par cette branche de routage
+* .W       1 word:   offset du point dans le tableau de routage
+*
+
+	* D2: nombre maxi de cases à router
+	* A2: Source
+	* A3: Cible
+	* D6: Valeur à poser dans ce routage
+	Move.l	Dim2,A5		Dim visible
+	Move.l	DimIA,A6	Dim de danger (4*18+4*15)
+	Move.l	DimIA2,A4	Dim de routage
+	Lea	DimIA3,A1	Tableau de 4 directions: danger .W (8 octets)
+	Clr.l	(A1)		Tous dangers=0
+	Clr.w	EtapeAct
+	Moveq	#-1,D3
+	Move.w	D3,EtapeMaxDir1
+	Move.w	D3,EtapeMaxDir2
+	Move.w	D3,EtapeMaxDir3
+	Move.w	D3,EtapeMaxDir4
+
+.Etape	Clr.w	D1		D1: NbCible
+	Move.w	NbSource,D0	D0: NbSource
+	Beq	.EndRou
+	Subq.w	#1,D0
+.LoopS	Move.l	(A2)+,D5	Danger+Dir. Dép. (.B),Total danger.B,Offset pt.W
+
+
+	******************************
+	Subq.w	#2,D5		X-1
+	Move.w	(A4,D5.w),D3
+	Cmp.w	D6,D3
+	Beq.s	.Nex1
+	Move.l	(A5,D5.w*2),D3	Valeur visible
+	Beq.s	.Lib1	
+	Tst.w	Leg_PousseB(A0)
+	Beq.s	.Nex1
+	Cmp.w	#Type_Bombe,D3
+	Bne.s	.Nex1
+.Lib1	* Ajout du danger au danger total.
+	Move.w	D5,D3
+	And.w	#$3C,D3		X*2: %111100:  22 -> 20
+	Move.b	(A6,D3.w),D4	
+	Move.w	D5,D3
+	Lsr.w	#6,D3		Y
+	Add.b	80(A6,D3.w),D4	Addition.B (nb de bombes!) (80=Offset dangers Y)
+	Beq.s	.NoDang
+	Bset	#31,D5		Branche marquée comme "NoSafe"
+	Beq.s	.NoDang		Il n'y avait pas encore de danger
+	Move.w	EtapeAct,EtapeMaxDir1	On marque comme étape maxi actuelle.
+.NoDang	Swap	D5
+	Move.b	D4,D5
+	Swap	D5		* Ajout danger au total de la direction
+	Move.w	D5,D3
+	Lsr.w	#7,D3		Direction 0-3 *2
+	And.w	#%110,D3
+	Add.w	D4,(A1,D3.w)	* Ajout du point dans la liste cible
+	Move.l	D5,(A3)+	Dir. Dép. (.B),Total danger.B,Offset pt.W	
+	Addq.w	#1,D1		* Valeur de routage
+	Move.w	D6,(A4,D5.w)	
+	Subq.w	#1,D2		* Décrémentation nb cases droit de router
+.Nex1	******************************
+	
+
+	Addq.w	#4,D5		X+1
+	...
+
+	Sub.w	#64*2+2,D5	Y-1
+	...
+
+	Add.w	#64*2*2,D5	Y+1
+	...
+
+
+	Tst.w	D2
+	Blt.s	.EndRou
+	Dbf	D0,.LoopS
+	Move.w	D1,NbSource
+	Clr.l	D1
+	Exg	A2,A3
+	Addq.w	#1,D6	Prochaine valeur de routage.
+	Add.w	#1,EtapeAct
+	Bra	.Etape
+.EndRou
+	Tst.w	EtapeAct
+	Beq	.ERROR_ROUTE
+
+*
+* C'est bien beau de router en faisant des statistiques, mais après
+* il faut exploiter ces données et prendre une décision.
+*
+
+
+
+
+
+
+Bon, maintenant que j'ai ma routine de routage de base, il me reste à
+y insérer la définition des variables choisies !
+
+Légende:
+--------
+(*)	= Variable traitée
+(>>>)	= Données à exploiter pour obtenir la variable
+
+
+Danger_plus_petit=50			Danger plus petit si pas case vide
+
+Direction_Case_Vide=-1			Affecté UNE fois (Première case vide)
+
+
+* Direction_Danger_Plus_Petit=-1		Direction à prendre au départ
+>>> DIMIA3 (4.W): Total danger par direction
+
+* Direction_Etape_Plus_Grande=-1		Direction à prendre au départ
+* Etape_plus_Grande=0			Etape la plus grande pour test=0
+>>> EtapeMaxDir1
+>>> EtapeMaxDir2
+>>> EtapeMaxDir3
+>>> EtapeMaxDir4
+
+
+Il manque aussi l'arrêt de la branche la plus dangereuse si case vide
+déjà trouvée.
+
+Il manque aussi la détection de virage.
+
+
+Réfléchir à la possibilité de modifier le routage de manière à ce qu'il
+gère beaucoup plus de points, mais de facon à n'avoir qu'une seule fois
+le code. Ce serait beaucoup plus facile à débugger et à faire évoluer,
+et cela permettrait de faire rentrer le code dans le cache CPU, et puis
+ce serait beaucoup plus propre. (en programme, pas en algorithme)
+
+
+
+* 
+* Nombre maximum de points: 18*15 = 270 -> 1080
+* Donc 1100.L = 4400 octets, 2 listes: >>>> 8800 octets <<<<
+*
+* Dim de routage: 64*16*2 = >>>> 2048 octets <<<<
+*
+* Dim de danger: >>>> 100 octets <<<<
+* .W+.w = 1 case pour le tableau des dangers en X =.L*20=80
+* .W = 	1 case pour le tableau des dangers en Y =.B*20=20
+*
+* Tableau 4 directions: >>>> 8 octets <<<<
+*
+* TOTAL DE LA MEMOIRE NECESSAIRE POUR I.A.:  >>>> 10956 octets <<<< 11Ko
+* 
+*
+* Guillaume n'aura décidemment plus ni musique ni son, avec
+* cet excédent de mémoire !!!
+*
+* Il faudrait réfléchir à la possibilité de lancer LegoBlast
+* sans l'ordinateur, peut-être avec un paramètre...
+* 2 icônes pour LegoBlast:
+* "LegoBlast" et "LegoBlast Low Memory"
+* avec une doc pour expliquer les différences.
+*
+* 
+
+
+	* D2: nombre maxi de cases à router
+	* A2: Source
+	* A3: Cible
+	* D6: Valeur à poser dans ce routage
+	Move.l	Dim2,A5		Dim visible
+	Move.l	DimIA,A6	Dim de danger (4*20+1*20)
+	Move.l	DimIA2,A4	Dim de routage
+	Lea	DimIA3,A1	Tableau de 4 directions: danger .W (8 octets)
+	Clr.l	(A1)		Tous dangers=0
+	Clr.w	EtapeAct
+	Moveq	#-1,D3
+	Move.w	D3,EtapeMaxDir1
+	Move.w	D3,EtapeMaxDir2
+	Move.w	D3,EtapeMaxDir3
+	Move.w	D3,EtapeMaxDir4
+
+.Etape	Clr.w	D1		D1: NbCible
+	Move.w	NbSource,D0	D0: NbSource
+	Beq	.EndRou
+	Subq.w	#1,D0
+.LoopS	Move.l	(A2)+,D5	Danger+Dir. Dép. (.B),Total danger.B,Offset pt.W
+
+	******************************
+	Move.w	(A4,D5.w),D3
+	Cmp.w	D6,D3
+	Beq.s	.Nex1
+	Move.l	(A5,D5.w*2),D3	Valeur visible
+	Beq.s	.Lib1	
+	Tst.w	Leg_PousseB(A0)
+	Beq.s	.Nex1
+	Cmp.w	#Type_Bombe,D3
+	Bne.s	.Nex1
+.Lib1	* Ajout du danger au danger total.
+	Move.w	D5,D3
+	And.w	#$3C,D3		X*2: %111100:  22 -> 20
+	Move.b	(A6,D3.w),D4	
+	Move.w	D5,D3
+	Lsr.w	#6,D3		Y
+	Add.b	80(A6,D3.w),D4	Addition.B (nb de bombes!) (80=Offset dangers Y)
+	Beq.s	.NoDang
+	Bset	#31,D5		Branche marquée comme "NoSafe"
+	Beq.s	.NoDang		Il n'y avait pas encore de danger
+	Move.w	EtapeAct,EtapeMaxDir1	On marque comme étape maxi actuelle.
+.NoDang	Swap	D5
+	Move.b	D4,D5
+	Swap	D5		* Ajout danger au total de la direction
+	Move.w	D5,D3
+	Lsr.w	#7,D3		Direction 0-3 *2
+	And.w	#%110,D3
+	Add.w	D4,(A1,D3.w)	* Ajout du point dans la liste cible
+	Move.w	D6,(A4,D5.w)	
+	Subq.w	#1,D2		* Décrémentation nb cases droit de router
+
+	****************************** CASE ACTUELLE ACCEPTEE: DEVELOPPEMENT
+
+	Subq.w	#2,D5		X-1
+	Move.l	D5,(A3)+
+	Addq.w	#4,D5		X+1
+	Move.l	D5,(A3)+
+	Sub.w	#64*2+2,D5	Y-1
+	Move.l	D5,(A3)+
+	Add.w	#64*2*2,D5	Y+1
+	Move.l	D5,(A3)+
+	Addq.w	#4,D1
+
+.Nex1	******************************
+	
+	Tst.w	D2
+	Blt.s	.EndRou
+	Dbf	D0,.LoopS
+	Move.w	D1,NbSource
+	Clr.l	D1
+	Exg	A2,A3
+	Addq.w	#1,D6	Prochaine valeur de routage.
+	Add.w	#1,EtapeAct
+	Bra	.Etape
+.EndRou
+	Tst.w	EtapeAct
+	Beq	.ERROR_ROUTE
+
+
+
+
+
+
+
+.ERROR_ROUTE
+
+
+
+***************
+
+
+
+
+
+
+
+
+
+
+
+
+
+
