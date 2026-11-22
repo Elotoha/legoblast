@@ -139,6 +139,7 @@ void animateTeleport(Player& player) {
         player.teleportPhase = 0;
     } else if (player.frame == TeleLast) {
         player.teleportPhase = -1;
+        player.imageOffset = 0;
         player.sprite = player.teleportDestination;
         player.forceCenter = true;
     }
@@ -157,6 +158,7 @@ bool tryTeleport(Player& player, const PlayerMap& map, Point current, bool gameO
         !map.at(destination.x + 1, destination.y + 1).visible) {
         player.teleportDestination = {word(BaseX + destination.x * 8), word(BaseY + destination.y * 8)};
         player.teleportFrame = TeleFirst;
+        player.imageOffset = 0;
         player.teleportPhase = 1;
         player.teleportPermission = 0;
         animateTeleport(player);
@@ -249,6 +251,10 @@ void Players::prepare(const Level& level, bool newLevel, bool dynaLevel) {
         player.dead = old.dead && old.noMoveDeaths > 1;
         player.sprite = {word(BaseX + level.starts[i].x * 16), word(BaseY + level.starts[i].y * 16)};
         player.speed = word(level.speed);
+        player.bombCapacity = level.bombs;
+        player.flameEnergy = player.storedEnergy = level.reach;
+        player.fuse = 5 * level.bombTime + 16;
+        player.loops = level.bombTime;
         player.fireRequest = newLevel ? 0 : 100;
         player.autoFire = !dynaLevel && level.autoFire != 0;
         player.push = level.push != 0;
@@ -287,6 +293,93 @@ void Players::show(Player& player, PlayerTick& timing) {
     player.visible = true;
 }
 
+namespace {
+// TestMalad processes M1 through M9 and defers subsequent timers if one expires.
+void tickEffects(Player& player) {
+    for (std::size_t i = 0; i < player.effects.size(); ++i) {
+        auto& time = player.effects[i];
+        if (!time || --time > 0)
+            continue;
+        switch (i) {
+        case 1: player.flameEnergy = player.storedEnergy; break;
+        case 2: player.fuse = player.storedFuse; player.loops = player.storedLoops; break;
+        case 3: player.speed = player.storedSpeed; break;
+        case 5: player.bombCapacity -= player.temporaryBombs; break;
+        case 6: player.imageOffset = 0; break;
+        default: break;
+        }
+        break;
+    }
+}
+}
+
+// TestMort's bonus table in Sprites.i, without the Amiga HUD and sound calls.
+void Players::applyBonus(Player& player, unsigned number, PlayerTick& timing, BombField& bombs, PlayerMap& map) {
+    constexpr int longTime = 1500, shortTime = 750;
+    auto& effects = player.effects;
+    switch (number) {
+    case 1:
+    case 21: player.flameEnergy += number == 1 ? 1 : 10; player.storedEnergy = player.flameEnergy; break;
+    case 2:
+    case 20: player.bombCapacity += number == 2 ? 1 : 5; break;
+    case 3: player.push = !player.push; break;
+    case 4: effects[0] = longTime; break;
+    case 5:
+    case 12: player.storedEnergy = player.flameEnergy; player.flameEnergy = number == 5 ? 3 : 50;
+             effects[1] = longTime; break;
+    case 6:
+    case 9:
+        if (!effects[2]) {
+            player.storedFuse = player.fuse;
+            player.storedLoops = player.loops;
+        }
+        player.loops = number == 6 ? 8 : 30;
+        player.fuse = 5 * player.loops + 16;
+        effects[2] = longTime;
+        break;
+    case 7:
+    case 8:
+        if (!effects[3])
+            player.storedSpeed = player.speed;
+        player.speed = number == 7 ? 1 : 4;
+        effects[3] = longTime;
+        break;
+    case 10: bombs.detonateAll(); break;
+    case 11: bombs.freeze(); break;
+    case 13: effects[4] = shortTime; break;
+    case 14:
+        if (!effects[5])
+            player.temporaryBombs = 0;
+        effects[4] = 0;
+        effects[5] = longTime;
+        player.temporaryBombs += 10;
+        player.bombCapacity += 10;
+        break;
+    case 15: effects[6] = shortTime; player.immunityFlash = 10; break;
+    case 16:
+        player.imageOffset = 0;
+        for (auto& time : effects)
+            if (time)
+                time = 1;
+        break;
+    case 17:
+        bombs.releaseClock(static_cast<unsigned>(&player - players_.data()));
+        player.clock = !player.clock;
+        break;
+    case 18: effects[7] = longTime; break;
+    case 19: bombs.scatter(map); break;
+    case 22:
+        for (auto& receiver : players_)
+            if (&receiver != &player && (!timing.teams || ((&receiver - &player) % 2 != 0))) {
+                receiver.effects[6] = shortTime;
+                receiver.immunityFlash = 10;
+            }
+        break;
+    case 23: effects[8] = longTime; effects[4] = 0; break;
+    default: break;
+    }
+}
+
 void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map, BombField* bombs) {
     join(controls);
     for (auto& player : players_) {
@@ -318,39 +411,66 @@ void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map,
         }
 
         auto step = movement(input, player.speed);
-        player.fire = input.fire && (player.autoFire || !player.previousFire);
-        player.previousFire = !player.autoFire && input.fire;
+        const unsigned owner = static_cast<unsigned>(&player - players_.data());
+        const bool heldFire = player.autoFire || player.effects[0] || player.clock;
+        player.fire = input.fire && (heldFire || !player.previousFire);
+        player.previousFire = !heldFire && input.fire;
         applyBumper(player, step);
-        if (player.activation == Activation::AwaitRelease) {
-            if (player.fire)
+        const bool awaitingFire = player.activation == Activation::AwaitRelease && player.fire;
+        if (awaitingFire) {
+            player.fire = false;
+        } else {
+            player.activation = Activation::Ready;
+            if (player.effects[4])
                 player.fire = false;
-            else
-                player.activation = Activation::Ready;
+            if (player.effects[8])
+                player.fire = true;
+            if (player.effects[0]) {
+                player.fire = !player.fire;
+                if (!player.bumper.x && !player.bumper.y)
+                    step = {word(-step.x), word(-step.y)};
+            }
         }
         selectAxis(step, player.previousStep);
         const auto screen = player.center();
         if (!player.fire) {
             player.repeatFire = -1;
+            if (bombs && player.clock)
+                bombs->releaseClock(owner);
         } else {
             player.repeatFire = (player.repeatFire + 1) & 3;
             if (!player.repeatFire && !timing.gameOver && bombs)
-                bombs->plant(static_cast<unsigned>(&player - players_.data()), screen, map);
+                bombs->plant(owner, screen, map, {player.bombCapacity, player.clock ? 26 : player.fuse,
+                    player.clock ? 2 : player.loops, player.flameEnergy, player.effects[7] != 0, player.clock});
         }
         center(player, screen, step, std::as_const(map));
         const auto desired = step;
         const Point current{word(subcell(screen.x)), word(subcell(screen.y))};
         conveyor(step, std::as_const(map).at(current.x, current.y).slab);
         step = testWall(player, screen, step, map);
-        if (bombs && bombs->flameMask(current.x, current.y)) {
+        tickEffects(player);
+        const auto visible = std::as_const(map).at(current.x, current.y).visible;
+        const bool crushed = visible == 1 || visible == 2 || visible == 3 || visible == 30 || visible == 31;
+        if (bombs && ((bombs->flameMask(current.x, current.y) && !player.effects[6]) || crushed)) {
+            bombs->releaseClock(owner);
             player.deathFrame = 72 + 1; // TestMort enters AnimMort in the same VBL.
             player.frame = player.deathFrame;
             continue;
         }
+        if (bombs && visible == 28)
+            applyBonus(player, bombs->collectBonus(current, map), timing, *bombs, map);
         if (tryTeleport(player, std::as_const(map), current, timing.gameOver))
             continue;
         player.sprite.x = word(player.sprite.x + step.x);
         player.sprite.y = word(player.sprite.y + step.y);
         animateWalk(player, desired);
+        if (player.effects[6]) {
+            player.imageOffset = 0;
+            if (--player.immunityFlash < 0) {
+                player.imageOffset = 36;
+                player.immunityFlash = 10;
+            }
+        }
     }
 }
 }

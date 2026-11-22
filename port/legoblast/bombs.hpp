@@ -12,6 +12,13 @@ struct Bomb {
     unsigned owner;
     int time, loops, energy, frame{};
     bool active{true};
+    bool rebounds{}, moved{}, frozen{}, held{};
+    int image() const { return frame + ((frozen || held) ? 210 : 0); }
+};
+
+struct BombSettings {
+    int capacity, time, loops, energy;
+    bool rebounds{}, held{};
 };
 
 struct BrokenBlock {
@@ -24,7 +31,13 @@ struct BrokenBlock {
 class BombField {
 public:
     explicit BombField(const Level& level);
-    bool plant(unsigned owner, Point center, PlayerMap& map);
+    bool plant(unsigned owner, Point center, PlayerMap& map, bool rebounds = false);
+    bool plant(unsigned owner, Point center, PlayerMap& map, const BombSettings& settings);
+    unsigned collectBonus(Point cell, PlayerMap& map);
+    void detonateAll();
+    void freeze();
+    void releaseClock(unsigned owner);
+    void scatter(PlayerMap& map);
     void tick(PlayerMap& map);
     const auto& bombs() const { return bombs_; }
     const auto& brokenBlocks() const { return broken_; }
@@ -43,6 +56,7 @@ private:
         bool erasing{};
     };
     void tickBombs(PlayerMap& map);
+    void moveBomb(std::size_t id, PlayerMap& map);
     void tickFlames(PlayerMap& map);
     bool passFlame(Arm& arm, Point point, PlayerMap& map);
     void breakBlock(Point cell, PlayerMap& map);
@@ -56,5 +70,7 @@ private:
     std::vector<BrokenBlock> broken_;
     std::array<std::uint8_t, 2 * Width * 2 * Height> masks_{};
     bool bombPass_{true};
+    int frozenTicks_{};
+    RandomState random_{};
 };
 }

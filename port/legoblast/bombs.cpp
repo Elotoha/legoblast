@@ -2,6 +2,7 @@
 #include "players.hpp"
 
 #include <algorithm>
+#include <bit>
 #include <utility>
 
 namespace legoblast {
@@ -43,23 +44,33 @@ void clearBomb(PlayerMap& map, Point p, int id) {
 
 BombField::BombField(const Level& level) : level_(level) {
     // The isolated test window does not have the Amiga's video-position seed.
-    RandomState state{0, 0};
-    hiddenBonuses_ = initialLevelRandoms(level, state).hiddenBonuses;
+    hiddenBonuses_ = initialLevelRandoms(level, random_).hiddenBonuses;
 }
 
-bool BombField::plant(unsigned owner, Point center, PlayerMap& map) {
+bool BombField::plant(unsigned owner, Point center, PlayerMap& map, bool rebounds) {
+    return plant(owner, center, map,
+                 {level_.bombs, 5 * level_.bombTime + 16, level_.bombTime, level_.reach, rebounds});
+}
+
+bool BombField::plant(unsigned owner, Point center, PlayerMap& map, const BombSettings& settings) {
+    if (settings.held && std::ranges::any_of(bombs_, [owner](const Bomb& bomb) {
+            return bomb.active && bomb.owner == owner && bomb.held;
+        }))
+        return false;
     const auto p = Point{short((std::uint16_t(center.x) >> 4) * 2),
                          short((std::uint16_t(center.y) >> 4) * 2)};
     for (auto sub : footprint(p))
         if (!inside(sub) || std::as_const(map).at(sub.x, sub.y).visible || flameMask(sub.x, sub.y))
             return false;
-    if (std::ranges::count_if(bombs_, [owner](const auto& b) { return b.active && b.owner == owner; }) >= level_.bombs)
+    if (std::ranges::count_if(bombs_, [owner](const auto& b) { return b.active && b.owner == owner; }) >= settings.capacity)
         return false;
 
     auto slot = std::ranges::find(bombs_, false, &Bomb::active);
     const auto id = static_cast<int>(slot - bombs_.begin());
     // PoseBombe receives Leg_BTime = (BombImT-BombImL+1)*Level_TimeB + BombImFin-BombImT.
-    const Bomb bomb{p, owner, 5 * level_.bombTime + 16, level_.bombTime, level_.reach};
+    Bomb bomb{p, owner, settings.time, settings.loops, settings.energy};
+    bomb.rebounds = settings.rebounds;
+    bomb.held = settings.held;
     if (slot == bombs_.end()) {
         if (bombs_.size() == MaxBombs)
             return false;
@@ -74,6 +85,9 @@ bool BombField::plant(unsigned owner, Point center, PlayerMap& map) {
 }
 
 void BombField::tick(PlayerMap& map) {
+    if (frozenTicks_ && --frozenTicks_ == 0)
+        for (auto& bomb : bombs_)
+            bomb.frozen = false;
     if (bombPass_)
         tickBombs(map);
     else
@@ -88,7 +102,9 @@ void BombField::tickBombs(PlayerMap& map) {
         if (!bomb.active)
             continue;
         auto& movement = map.bombVelocities[id];
-        if (--bomb.time <= 0) {
+        if (!bomb.frozen && !bomb.held)
+            --bomb.time;
+        if (bomb.time <= 0 || ((bomb.frozen || bomb.held) && bomb.time == 1)) {
             bomb.active = false;
             movement = {};
             clearBomb(map, bomb.cell, static_cast<int>(id));
@@ -109,34 +125,136 @@ void BombField::tickBombs(PlayerMap& map) {
             continue;
         }
 
-        if (++bomb.frame > 4 && --bomb.loops > 0)
-            bomb.frame = 0;
-        if (!movement.x && !movement.y)
+        if (bomb.frozen && !bomb.held)
             continue;
-        const auto next = add(bomb.cell, movement);
-        bool blocked = false;
-        bool lit = false;
-        for (const auto point : footprint(next)) {
-            if (!inside(point)) {
-                blocked = true;
-                break;
-            }
-            const auto& cell = std::as_const(map).at(point.x, point.y);
-            if ((cell.visible && !(cell.visible == BombTile && cell.bomb == static_cast<int>(id))) ||
-                cell.slab == 5 || cell.slab == 6)
-                blocked = true;
-            if (cell.slab == 7 || cell.slab == 16 || flameMask(point.x, point.y))
-                lit = true;
+        if (!bomb.held && ++bomb.frame > 4 && --bomb.loops > 0)
+            bomb.frame = 0;
+        moveBomb(id, map);
+    }
+}
+
+// Bombes.i: BombMouvX/Y and Test2CasesY/X look at the two leading subcells.
+void BombField::moveBomb(std::size_t id, PlayerMap& map) {
+    auto& bomb = bombs_[id];
+    auto& velocity = map.bombVelocities[id];
+    if (!velocity.x && !velocity.y) {
+        bomb.moved = false;
+        return;
+    }
+    const bool horizontal = velocity.x != 0;
+    const Point step = horizontal ? Point{velocity.x, 0} : Point{0, velocity.y};
+    const auto next = add(bomb.cell, step);
+    const auto leading = add(next, {short(step.x > 0), short(step.y > 0)});
+    const auto other = add(leading, horizontal ? Point{0, 1} : Point{1, 0});
+    int firstHit = -1;
+    bool blocked = false;
+    bool bounce = false;
+    for (auto point : {leading, other}) {
+        if (!inside(point)) {
+            blocked = true;
+            continue;
         }
-        if (blocked) {
-            movement = {};
-        } else {
-            clearBomb(map, bomb.cell, static_cast<int>(id));
-            bomb.cell = next;
-            markBomb(map, bomb.cell, static_cast<int>(id));
-            if (lit)
+        const auto& cell = std::as_const(map).at(point.x, point.y);
+        if (cell.slab == 7) {
+            bomb.time = 0;
+            continue; // Type_Explo bypasses the visible-tile test.
+        }
+        if (!cell.visible) {
+            if (flameMask(point.x, point.y))
                 bomb.time = 0;
+            continue;
         }
+        blocked = true;
+        bounce |= bomb.moved && bomb.rebounds;
+        if (cell.visible == BombTile && cell.bomb != firstHit && cell.bomb >= 0 &&
+            static_cast<std::size_t>(cell.bomb) < bombs_.size()) {
+            firstHit = cell.bomb;
+            auto& received = map.bombVelocities[cell.bomb];
+            auto& axis = horizontal ? received.x : received.y;
+            auto& perpendicular = horizontal ? received.y : received.x;
+            const auto incoming = horizontal ? step.x : step.y;
+            if (perpendicular || !axis) {
+                perpendicular = 0;
+                axis = incoming;
+            } else if (axis + incoming == 0) {
+                axis = 0;
+            }
+        }
+    }
+    if (bounce) {
+        velocity = {short(-velocity.x), short(-velocity.y)};
+        return;
+    }
+    if (blocked) {
+        if (horizontal)
+            velocity.x = 0;
+        else
+            velocity.y = 0;
+        return;
+    }
+
+    bomb.moved = true;
+    clearBomb(map, bomb.cell, static_cast<int>(id));
+    bomb.cell = next;
+    if (!(next.x & 1) && !(next.y & 1)) {
+        const auto destination = map.at(next.x, next.y).teleporter;
+        if ((destination.x || destination.y) &&
+            std::ranges::all_of(footprint(destination), [&](Point point) {
+                return inside(point) && !std::as_const(map).at(point.x, point.y).visible;
+            }))
+            bomb.cell = destination;
+    }
+    markBomb(map, bomb.cell, static_cast<int>(id));
+}
+
+unsigned BombField::collectBonus(Point cell, PlayerMap& map) {
+    if (!inside(cell) || map.at(cell.x, cell.y).visible != 28)
+        return 0;
+    const auto index = tileIndex(cell);
+    const auto raw = level_.tiles[index];
+    if (raw <= 64 || raw > 87)
+        return 0;
+    level_.tiles[index] = 0;
+    for (const auto point : footprint(wholeTile(cell)))
+        map.at(point.x, point.y).visible = 0;
+    return raw - 64;
+}
+
+void BombField::detonateAll() {
+    for (auto& bomb : bombs_)
+        if (bomb.active)
+            bomb.time = 0;
+}
+
+void BombField::freeze() {
+    frozenTicks_ = 500;
+    for (auto& bomb : bombs_)
+        if (bomb.active)
+            bomb.frozen = true;
+}
+
+void BombField::releaseClock(unsigned owner) {
+    for (auto& bomb : bombs_)
+        if (bomb.active && bomb.held && bomb.owner == owner) {
+            bomb.held = false;
+            bomb.frame = 0;
+        }
+}
+
+void BombField::scatter(PlayerMap& map) {
+    if (bombs_.empty())
+        return;
+    // FolleList is seeded by MOVEM.W over the two halves of MemRnd1.
+    const auto signExtend = [](std::uint32_t word) {
+        return static_cast<std::uint32_t>(std::bit_cast<std::int16_t>(static_cast<std::uint16_t>(word)));
+    };
+    RandomState draw{signExtend(random_.d0 >> 16), signExtend(random_.d0)};
+    int direction = static_cast<int>(draw.next() & 3);
+    random_.d0 = draw.d0 << 16 | (draw.d1 & 0xffff);
+    constexpr std::array<Point, 4> directions{{{-1, 0}, {0, 1}, {0, -1}, {1, 0}}};
+    for (auto& velocity : map.bombVelocities) {
+        direction = direction ? direction - 1 : 3;
+        velocity = directions[direction];
     }
 }
 

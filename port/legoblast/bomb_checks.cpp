@@ -130,6 +130,98 @@ void pipes() {
     expect(!bombs.bombs()[1].active, "chain exits the pipe");
 }
 
+void specialMovement() {
+    auto level = fixture();
+    level.tiles[2 * Width + 3] = 1;
+    PlayerMap map(level);
+    BombField bombs(level);
+    expect(bombs.plant(0, {39, 42}, map, true), "rebound bomb");
+    map.bombVelocities[0] = {1, 0};
+    bombs.tick(map);
+    expect(!map.bombVelocities[0].x && bombs.bombs()[0].cell.x == 4,
+           "a bomb blocked on its first step must not bounce");
+    map.bombVelocities[0] = {-1, 0};
+    map.at(2, 4).visible = map.at(2, 5).visible = 1;
+    bombs.tick(map);
+    bombs.tick(map);
+    expect(bombs.bombs()[0].cell.x == 3 && bombs.bombs()[0].moved, "previous successful step");
+    bombs.tick(map);
+    bombs.tick(map);
+    expect(bombs.bombs()[0].cell.x == 3 && map.bombVelocities[0].x == 1,
+           "bounce reverses velocity without moving that tick");
+
+    for (bool blocked : {false, true}) {
+        auto test = fixture();
+        test.teleporters.push_back({{6, 4}, {18, 10}});
+        PlayerMap teleportMap(test);
+        BombField teleport(test);
+        expect(teleport.plant(0, {39, 42}, teleportMap), "teleporter bomb");
+        teleportMap.bombVelocities[0] = {1, 0};
+        if (blocked)
+            teleportMap.at(19, 11).visible = 2;
+        teleport.tick(teleportMap);
+        expect(teleport.bombs()[0].cell.x == 5, "unaligned bomb cannot teleport");
+        teleport.tick(teleportMap);
+        teleport.tick(teleportMap);
+        expect(teleport.bombs()[0].cell.x == (blocked ? 6 : 18) &&
+               teleport.bombs()[0].cell.y == (blocked ? 4 : 10) &&
+               teleportMap.bombVelocities[0].x == 1, "teleport with four free cells and preserved velocity");
+        const auto p = teleport.bombs()[0].cell;
+        expect(teleportMap.at(5, 4).visible == 0 && teleportMap.at(p.x + 1, p.y + 1).bomb == 0,
+               "teleport moves all four occupancy records");
+    }
+}
+
+void bonusDestruction() {
+    auto level = fixture();
+    level.tiles[2 * Width + 3] = 2;
+    level.bonusWeights[18] = 1;
+    level.blocks[2] = 90;
+    PlayerMap map(level);
+    BombField bombs(level);
+    expect(bombs.plant(0, {39, 42}, map), "hidden bonus bomb");
+    for (int frame = 0; frame < 41; ++frame)
+        bombs.tick(map);
+    expect(map.at(6, 4).visible == 31 && bombs.collectBonus({6, 4}, map) == 0,
+           "destruction animation blocks pickup");
+    for (int frame = 0; frame < 20; ++frame)
+        bombs.tick(map);
+    expect(map.at(6, 5).visible == 28 && bombs.level().tiles[2 * Width + 3] == 82,
+           "destructible shows its hidden bonus");
+    expect(bombs.plant(0, {39, 42}, map), "visible bonus bomb");
+    for (int frame = 0; frame < 42; ++frame)
+        bombs.tick(map);
+    expect(map.at(6, 5).visible == 30 && bombs.brokenBlocks()[0].frame >= 40 &&
+           bombs.collectBonus({6, 4}, map) == 0, "visible bonus uses its destruction frames");
+    for (int frame = 0; frame < 20; ++frame)
+        bombs.tick(map);
+    expect(map.at(6, 5).visible == 0 && bombs.level().tiles[2 * Width + 3] == 0,
+           "a destroyed bonus does not reappear");
+}
+
+void clocksAndFreezing() {
+    auto level = fixture();
+    PlayerMap map(level);
+    BombField bombs(level);
+    expect(bombs.plant(0, {39, 42}, map, {2, 26, 2, 5, false, true}), "clock bomb");
+    expect(!bombs.plant(0, {55, 42}, map, {2, 26, 2, 5, false, true}), "one held bomb per player");
+    bombs.tick(map);
+    expect(bombs.bombs()[0].time == 26, "clock pauses timer");
+    bombs.releaseClock(0);
+    bombs.freeze();
+    for (int i = 0; i < 498; ++i)
+        bombs.tick(map);
+    expect(bombs.bombs()[0].time == 26 && bombs.bombs()[0].image() >= 210, "freeze persists");
+    bombs.tick(map);
+    bombs.tick(map);
+    expect(bombs.bombs()[0].time == 25 && bombs.bombs()[0].image() < 210, "freeze expires");
+    bombs.freeze();
+    bombs.detonateAll();
+    bombs.tick(map);
+    bombs.tick(map);
+    expect(!bombs.bombs()[0].active, "detonation overrides freeze");
+}
+
 }
 
 int main() {
@@ -137,6 +229,9 @@ int main() {
         fuseAndChain();
         pushAndWall();
         pipes();
+        specialMovement();
+        bonusDestruction();
+        clocksAndFreezing();
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

@@ -53,4 +53,12 @@ La pose reprend `PoseBombe` et `NewBomb`. Elle échantillonne le Feu avant le d�
 
 Les flammes prennent aussi les coudes et les embranchements de tuyaux. Le code suit les bits d’ouverture de `TestToyoX` et `TestToyoY`. Une sortie dans l’axe conserve la propagation en ligne droite. Lorsque cette sortie est fermée, chaque branche latérale ouverte devient une flamme indépendante et perd une unité d’énergie. Les tests couvrent le passage dans les deux sens, le refus d’une entrée fermée, les coudes, l’embranchement, la priorité à la sortie droite et la réaction en chaîne après un coude.
 
-Les collisions de poussée de base et l’animation d’élimination par les flammes sont incluses. Les rebonds et téléportations des bombes, les maladies, le son et le déroulement des manches restent à traduire. La fenêtre utilise une graine fixe et n’a pas encore été comparée à une trace Amiga.
+Les collisions de poussée de base et l’animation d’élimination par les flammes sont incluses. Le son, le déroulement des manches et la transmission des maladies entre joueurs restent à traduire. La fenêtre utilise une graine fixe et n’a pas encore été comparée à une trace Amiga.
+
+## Bonus et déplacements spéciaux des bombes
+
+Les bombes poussées testent les deux sous-cellules de l’avant. Elles se téléportent lorsqu’elles s’alignent sur une entrée et que les quatre sous-cellules de sortie sont libres. Elles gardent leur vitesse à la sortie. Le bonus de rebond s’applique aux nouvelles bombes pendant sa durée. Une bombe qui a déjà avancé inverse sa vitesse lorsqu’elle heurte un bloc.
+
+Les flammes font jouer l’animation de destruction d’un bonus visible. La destruction d’un mur révèle son bonus caché, s’il en contenait un. Les effets à la prise sont branchés sur les 23 identifiants de la table Amiga. Ils comprennent les changements de capacité, de portée, de vitesse et de mèche, les commandes inversées, le gel, l’horloge, le rebond, l’invincibilité et l’ambulance. Les temporisations reprennent l’ordre de `TestMalad`. Les effets sonores, la barre d’état et la transmission par contact restent à intégrer. En cas de choc simultané contre deux bombes différentes, le C++ traite les deux cibles par identifiant. Cette situation et le reste du comportement n’ont pas encore été comparés à des traces Amiga.
+
+Pour lancer le niveau original **Bump Alert** depuis le ZIP Windows, ouvrir un terminal dans le dossier extrait et exécuter `legoblast_players.exe 314`. Ce niveau contient des téléporteurs, autorise la poussée et peut révéler le bonus de rebond sous les murs.

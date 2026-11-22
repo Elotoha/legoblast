@@ -128,7 +128,7 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
                     drawLevelPattern(frame, x * 8, y * 8, 8, mask, flameBank);
         for (const auto& bomb : bombs.bombs())
             if (bomb.active)
-                drawLevelPattern(frame, bomb.cell.x * 8, bomb.cell.y * 8, 16, bomb.frame, bank);
+                drawLevelPattern(frame, bomb.cell.x * 8, bomb.cell.y * 8, 16, bomb.image(), bank);
         const auto rgb = levelRgb(frame, boardPalette);
         check(SDL_UpdateTexture(background.get(), nullptr, rgb.data(), BoardWidth * 3));
         check(SDL_RenderClear(renderer.get()));
@@ -136,7 +136,7 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
         for (const auto& player : players.slots()) {
             if (!player.visible)
                 continue;
-            const auto image = attachedSprite(sprites, indices, palette, player.frameBase + player.frame);
+            const auto image = attachedSprite(sprites, indices, palette, player.frameBase + player.frame + player.imageOffset);
             check(SDL_UpdateTexture(sprite.get(), nullptr, image.data(), SpriteWidth * 4));
             const auto point = player.center();
             const SDL_FRect box{float(point.x - 7), float(point.y - 20), SpriteWidth, SpriteHeight};
@@ -162,13 +162,17 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
 int main(int argc, char* argv[]) {
     struct Quit { ~Quit() { SDL_Quit(); } } quit;
     try {
-        if (argc == 1 || (argc == 2 && std::string_view(argv[1]) == "--smoke")) {
+        if (argc <= 2) {
+            const std::string_view option = argc == 2 ? argv[1] : "021";
+            const bool smoke = option == "--smoke";
+            if (!smoke && (option.size() != 3 || option.find_first_not_of("0123456789") != option.npos))
+                throw std::runtime_error("expected a three-digit level number");
             const char* base = SDL_GetBasePath();
             if (!base)
                 throw std::runtime_error(SDL_GetError());
             const std::filesystem::path root = std::filesystem::path(reinterpret_cast<const char8_t*>(base)) / "data";
             return view(root, root / "binary/LEGO_SPRITES.DAT",
-                        root / "binary/Lego_Level021.dat", argc == 2);
+                        root / "binary" / ("Lego_Level" + std::string(smoke ? "021" : option) + ".dat"), smoke);
         }
         if (argc != 4 && (argc != 5 || std::string_view(argv[4]) != "--smoke"))
             throw std::runtime_error("usage: legoblast_players [AMIGA_SRC LEGO_SPRITES.DAT LEVEL.dat] [--smoke]");

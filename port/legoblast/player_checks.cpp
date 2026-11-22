@@ -1,4 +1,5 @@
 #include "players.hpp"
+#include "bombs.hpp"
 
 #include <iostream>
 #include <stdexcept>
@@ -156,6 +157,34 @@ void teleporter() {
     f.tick(map, 28);
     expect(f.player().teleportPhase == 0 && f.player().frame == 33, "destination appearance");
 }
+void bonusEffects() {
+    const auto collect = [](unsigned bonus) {
+        Fixture f;
+        f.level.tiles[2 * Width + 2] = static_cast<std::uint8_t>(64 + bonus);
+        f.level.bombs = 3;
+        f.level.bombTime = 15;
+        f.level.reach = 5;
+        f.players.prepare(f.level, true, false);
+        PlayerMap map(f.level);
+        BombField bombs(f.level);
+        f.appear(map);
+        f.players.tick(f.controls, f.timing, map, &bombs);
+        expect(!bombs.collectBonus({4, 5}, map) && !map.at(5, 5).visible,
+               "collected bonus must vanish from all four subcells");
+        return f.player();
+    };
+    expect(collect(1).flameEnergy == 6 && collect(21).flameEnergy == 15, "flame upgrades");
+    expect(collect(2).bombCapacity == 4 && collect(20).bombCapacity == 8, "capacity upgrades");
+    expect(collect(3).push && collect(17).clock, "push and clock toggles");
+    expect(collect(5).flameEnergy == 3 && collect(12).flameEnergy == 50, "temporary flame effects");
+    expect(collect(6).fuse == 56 && collect(9).fuse == 166, "fast and slow fuse effects");
+    expect(collect(7).speed == 1 && collect(8).speed == 4, "speed effects");
+    expect(collect(4).effects[0] == 1500 && collect(13).effects[4] == 750 &&
+           collect(14).bombCapacity == 13 && collect(15).effects[6] == 750 &&
+           collect(18).effects[7] == 1500 && collect(23).effects[8] == 1500,
+           "temporary bonus durations and extra capacity");
+}
+
 }
 
 int main() {
@@ -164,6 +193,7 @@ int main() {
         movement();
         bombCollision();
         teleporter();
+        bonusEffects();
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

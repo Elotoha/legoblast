@@ -36,6 +36,10 @@ struct Player {
     int speed{}, frame{168}, frameBase{}, animationTicks{};
     int teleportFrame{168}, teleportPhase{-1}, teleportPermission{};
     int fireRequest{}, slowBumper{}, blockedTicks{}, repeatFire{}, deathFrame{};
+    int bombCapacity{}, flameEnergy{}, fuse{}, loops{}, imageOffset{};
+    std::array<int, 9> effects{};
+    int storedEnergy{}, storedFuse{}, storedLoops{}, storedSpeed{}, temporaryBombs{}, immunityFlash{};
+    bool clock{};
     int recentCell{}, earlierCell{};
     int roundsPlayed{};
     int control{-1};
@@ -53,6 +57,7 @@ struct PlayerTick {
     std::int16_t levelInfoState{};
     bool levelTimerRunning{}, gameOver{}, winnersPhase{};
     bool requestClearBar{};
+    bool teams{};
 };
 
 class Players {
@@ -64,6 +69,7 @@ public:
 private:
     void join(const Controls& controls);
     void show(Player& player, PlayerTick& timing);
+    void applyBonus(Player& player, unsigned number, PlayerTick& timing, BombField& bombs, PlayerMap& map);
     std::array<Player, PlayerCount> players_{};
     std::array<bool, static_cast<std::size_t>(Control::Count)> locked_{};
     bool someoneAppeared_{};
