@@ -120,6 +120,7 @@ int main(int argc, char** argv) {
             ~QuitSDL() { SDL_Quit(); }
         } quit;
         preview(assets, frames);
+        return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;
