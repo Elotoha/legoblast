@@ -278,6 +278,15 @@ Bytes staticLevelRgb(const Level& level, std::span<const std::uint8_t> bank,
     return levelRgb(staticLevelIndices(level, bank), palette);
 }
 
+// TraceBlocWithBloc replaces the tile using the floor as the masked layer.
+void drawLevelBlock(Bytes& board, Point cell, unsigned frame, unsigned floor,
+                    std::span<const std::uint8_t> bank) {
+    for (int y = 0; y < TileSize; ++y)
+        for (int x = 0; x < TileSize; ++x)
+            board.at((cell.y * 8 + y) * Width * TileSize + cell.x * 8 + x) =
+                static_cast<std::uint8_t>(colorAt(bank, frame, floor, x, y, true));
+}
+
 // TraceWithFont / TraceLittle: mask the six underlying planes, then OR the image.
 void drawLevelPattern(Bytes& board, int x, int y, unsigned width, unsigned frame,
                       std::span<const std::uint8_t> bank) {

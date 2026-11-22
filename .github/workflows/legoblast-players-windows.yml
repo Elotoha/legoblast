@@ -27,6 +27,9 @@ jobs:
             /amiga/src/binary/bobs_nus22.col
             /amiga/src/binary/Lego_Sprites.col
             /amiga/src/binary/Lego_SpritesIndex.dat
+            /amiga/src/binary/Lego_Sprites8.dat
+            /amiga/src/binary/Lego_SpritesIndex8.dat
+            /amiga/src/binary/Mec8_normal.col
       - name: Configurer
         shell: pwsh
         run: |
@@ -48,6 +51,7 @@ jobs:
           Copy-Item port/legoblast/README.md package/
           Copy-Item amiga/src/binary/Lego_Level*.dat, amiga/src/binary/Lego_Flam_*.Dat package/data/binary/
           Copy-Item amiga/src/binary/Lego_Blocs.dat, amiga/src/binary/bobs_nus22.col, amiga/src/binary/Lego_Sprites.col, amiga/src/binary/Lego_SpritesIndex.dat package/data/binary/
+          Copy-Item amiga/src/binary/Lego_Sprites8.dat, amiga/src/binary/Lego_SpritesIndex8.dat, amiga/src/binary/Mec8_normal.col package/data/binary/
           Copy-Item amiga/src/LEGO_WORLDS/*.col package/data/LEGO_WORLDS/
           Copy-Item build/amiga-release/binary/LEGO_SPRITES.DAT package/data/binary/
       - name: Vérifier le lancement de l’exécutable emballé

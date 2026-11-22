@@ -12,6 +12,7 @@ constexpr unsigned ResultDelay = 10;
 constexpr unsigned FillImages = 5;
 constexpr unsigned FillFrameDelay = 3;
 constexpr unsigned FillBlockIndex = 19;
+constexpr unsigned DontMoveSeconds = 6;
 
 bool hasFire(const Controls& input) { return std::ranges::any_of(input, &Buttons::fire); }
 bool appeared(const Player& player) { return player.activation != Activation::Hidden; }
@@ -23,18 +24,29 @@ unsigned clockTime(std::uint32_t value) {
 }
 
 Session::Session(Level level, MatchOptions options)
-    : level_(std::move(level)), options_(options), map_(level_), bombs_(level_),
-      closingOrder_(fillOrder(level_)) {
-    startRound();
+    : Session(std::vector<Level>{std::move(level)}, 0, options) {}
+
+Session::Session(std::vector<Level> levels, std::size_t startingArena, MatchOptions options)
+    : arenas_(std::move(levels)), firstArena_(startingArena), arenaIndex_(startingArena),
+      level_(arenas_.at(startingArena)), options_(options), map_(level_), bombs_(level_) {
+    resetMatch();
 }
 
-void Session::startRound() {
-    ++roundNumber_;
+void Session::startRound(RandomState random, bool newRound) {
+    const bool dyna = options_.arena == ArenaMode::Dynablaster;
+    if (newRound || dyna)
+        level_ = arenas_[arenaIndex_];
+    if (dyna)
+        dynaInit(level_, random);
+    if (newRound)
+        ++roundNumber_;
+    closingOrder_ = fillOrder(level_);
     map_ = PlayerMap(level_);
-    bombs_ = BombField(level_);
-    players_.prepare(level_, true, false);
+    bombs_ = BombField(level_, random);
+    players_.prepare(level_, newRound, dyna);
     timing_ = {};
     timing_.teams = options_.teams;
+    timing_.survivor = options_.survivor;
     timing_.fiveWinMatch = options_.fiveWins;
     timing_.levelInfoState = 0;
     remaining_ = clockTime(level_.totalTime);
@@ -42,6 +54,7 @@ void Session::startRound() {
     winners_.fill(false);
     closingFrames_.clear();
     nextClosing_ = closingDelay_ = resultDelay_ = appeared_ = 0;
+    retrying_ = !newRound;
     paused_ = alert_ = entriesClosed_ = false;
     phase_ = RoundPhase::AwaitingPlayers;
 }
@@ -50,7 +63,9 @@ void Session::resetMatch() {
     players_ = Players{};
     score_.fill(0);
     roundNumber_ = 0;
-    startRound();
+    arenaIndex_ = firstArena_;
+    arenasFinished_ = false;
+    startRound({});
 }
 
 void Session::togglePause() {
@@ -72,12 +87,12 @@ void Session::tickClock() {
         phase_ = RoundPhase::Draining;
         return;
     }
-    alert_ = warning_ && warning_ <= 10 * TicksPerSecond;
     if (warning_) {
+        --warning_;
         if (warning_ == 10 * TicksPerSecond)
             closeEntries();
-        --warning_;
     }
+    alert_ = warning_ && warning_ <= 10 * TicksPerSecond;
     if (!warning_ && level_.totalTime > level_.warningTime)
         tickClosing();
 }
@@ -92,7 +107,7 @@ void Session::tick(const Controls& input) {
             if (phase_ == RoundPhase::MatchComplete)
                 resetMatch();
             else
-                startRound();
+                advanceArena();
         }
         return;
     }
@@ -104,6 +119,9 @@ void Session::tick(const Controls& input) {
     if (timing_.levelTimerRunning && remaining_)
         tickClock();
 
+    if (timing_.autoCounter % 4 == 0)
+        players_.tickBumpers(map_);
+    const auto previousSlots = players_.slots();
     players_.tick(input, timing_, map_, &bombs_);
     if (timing_.levelTimerRunning && phase_ == RoundPhase::AwaitingPlayers)
         phase_ = RoundPhase::Running;
@@ -117,8 +135,24 @@ void Session::tick(const Controls& input) {
     for (std::size_t i = 0; i < slots.size(); ++i)
         if (surviving(slots[i]))
             ++survivors[i % 2];
-    if (entriesClosed_ && (survivors[0] + survivors[1] <= 1 ||
-                           (options_.teams && (!survivors[0] || !survivors[1])))) {
+    const auto timeUsed = level_.totalTime > remaining_ ? level_.totalTime - remaining_ : 0;
+    const bool beforeClosing = warning_ || level_.totalTime <= level_.warningTime;
+    const auto living = survivors[0] + survivors[1];
+    for (std::size_t i = 0; i < slots.size(); ++i) {
+        if (!previousSlots[i].deathFrame || previousSlots[i].dead || !slots[i].dead)
+            continue;
+        const bool retry = options_.survivor ? living > 1 :
+            living && slots[i].noMoveDeaths <= 1 && beforeClosing && timeUsed / TicksPerSecond <= DontMoveSeconds;
+        if (retry) {
+            startRound(bombs_.randomState(), false);
+            return;
+        }
+    }
+    std::array<unsigned, 2> alive{};
+    for (std::size_t i = 0; i < slots.size(); ++i)
+        if (!slots[i].dead)
+            ++alive[i % 2];
+    if (alive[0] + alive[1] <= 1 || (options_.teams && (!alive[0] || !alive[1]))) {
         timing_.gameOver = true;
         bombs_.thaw();
         phase_ = RoundPhase::Draining;
@@ -130,6 +164,15 @@ void Session::tick(const Controls& input) {
             return appeared(p) && !p.dead && (p.deathFrame || p.teleportPhase);
         }))
         endRound();
+}
+
+void Session::advanceArena() {
+    auto random = bombs_.randomState();
+    if (options_.arena == ArenaMode::Sequential)
+        ++arenaIndex_;
+    if (options_.arena == ArenaMode::Random)
+        arenaIndex_ = (random.next() & 0xfff) % arenas_.size();
+    startRound(random);
 }
 
 void Session::endRound() {
@@ -151,8 +194,10 @@ void Session::endRound() {
         if (options_.teams)
             ++score_[teamSurvives[0] ? 0 : 1];
     }
-    const bool matchComplete = options_.fiveWins && std::ranges::any_of(score_, [](auto score) { return score >= Wins; });
-    phase_ = matchComplete ? RoundPhase::MatchComplete : RoundPhase::Result;
+    const bool matchComplete = (options_.teams || options_.fiveWins) &&
+        std::ranges::any_of(score_, [](auto score) { return score >= Wins; });
+    arenasFinished_ = !matchComplete && options_.arena == ArenaMode::Sequential && arenaIndex_ + 1 == arenas_.size();
+    phase_ = matchComplete || arenasFinished_ ? RoundPhase::MatchComplete : RoundPhase::Result;
     resultDelay_ = ResultDelay;
 }
 
@@ -180,9 +225,11 @@ std::vector<Point> Session::fillOrder(const Level& level) {
 
 void Session::tickClosing() {
     if (closingDelay_) {
-        --closingDelay_;
-        if (closingDelay_ && closingDelay_ % FillFrameDelay == 0)
+        if (--closingDelay_ == 0) {
             ++closingFrames_.back().image;
+            if (closingFrames_.back().image - level_.blocks[FillBlockIndex] < FillImages - 1)
+                closingDelay_ = FillFrameDelay;
+        }
         return;
     }
     if (nextClosing_ == closingOrder_.size())
@@ -190,6 +237,6 @@ void Session::tickClosing() {
     const auto tile = closingOrder_[nextClosing_++];
     bombs_.placeClosingBlock(tile, map_);
     closingFrames_.push_back({tile, level_.blocks[FillBlockIndex]});
-    closingDelay_ = FillImages * FillFrameDelay;
+    closingDelay_ = 1;
 }
 }

@@ -42,7 +42,7 @@ void clearBomb(PlayerMap& map, Point p, int id) {
 }
 }
 
-BombField::BombField(const Level& level) : level_(level) {
+BombField::BombField(const Level& level, RandomState random) : level_(level), random_(random) {
     // The isolated test window does not have the Amiga's video-position seed.
     hiddenBonuses_ = initialLevelRandoms(level, random_).hiddenBonuses;
 }

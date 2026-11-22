@@ -57,6 +57,8 @@ Bytes staticLevelIndices(const Level& level, std::span<const std::uint8_t> bank)
 Bytes levelRgb(std::span<const std::uint8_t> indexed, std::span<const std::uint8_t> palette);
 void drawLevelPattern(Bytes& board, int x, int y, unsigned width, unsigned frame,
                       std::span<const std::uint8_t> bank);
+void drawLevelBlock(Bytes& board, Point cell, unsigned frame, unsigned floor,
+                    std::span<const std::uint8_t> bank);
 Bytes staticLevelRgb(const Level& level, std::span<const std::uint8_t> bank,
                      std::span<const std::uint8_t> palette);
 }

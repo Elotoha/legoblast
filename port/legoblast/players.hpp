@@ -41,10 +41,11 @@ struct Player {
     int storedEnergy{}, storedFuse{}, storedLoops{}, storedSpeed{}, temporaryBombs{}, immunityFlash{};
     bool clock{};
     int recentCell{}, earlierCell{};
+    int bumperCell{};
     int roundsPlayed{};
     int control{-1};
     Activation activation{Activation::Hidden};
-    bool forceCenter{true}, autoFire{}, previousFire{}, fire{}, canPush{}, push{};
+    bool forceCenter{true}, autoFire{}, previousFire{}, fire{}, canPush{}, push{}, canBeBumped{};
     bool dead{};
     int noMoveDeaths{};
     bool visible{};
@@ -58,6 +59,14 @@ struct PlayerTick {
     bool levelTimerRunning{}, gameOver{}, winnersPhase{};
     bool requestClearBar{};
     bool teams{};
+    bool survivor{};
+};
+
+struct Bumper {
+    Point cell, direction;
+    std::array<Point, 2> probes;
+    unsigned frame{}, imageOffset{};
+    int state{-1};
 };
 
 class Players {
@@ -65,13 +74,16 @@ public:
     void prepare(const Level& level, bool newLevel, bool dynaLevel);
     void tick(const Controls& controls, PlayerTick& timing, PlayerMap& map, BombField* bombs = nullptr);
     void eliminateAbsent();
+    void tickBumpers(PlayerMap& map);
     const auto& slots() const { return players_; }
+    const auto& bumpers() const { return bumpers_; }
 
 private:
     void join(const Controls& controls);
     void show(Player& player, PlayerTick& timing);
     void applyBonus(Player& player, unsigned number, PlayerTick& timing, BombField& bombs, PlayerMap& map);
     std::array<Player, PlayerCount> players_{};
+    std::vector<Bumper> bumpers_;
     std::array<bool, static_cast<std::size_t>(Control::Count)> locked_{};
     bool someoneAppeared_{};
 };

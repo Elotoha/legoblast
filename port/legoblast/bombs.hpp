@@ -30,7 +30,7 @@ struct BrokenBlock {
 
 class BombField {
 public:
-    explicit BombField(const Level& level);
+    explicit BombField(const Level& level, RandomState random = {});
     bool plant(unsigned owner, Point center, PlayerMap& map, bool rebounds = false);
     bool plant(unsigned owner, Point center, PlayerMap& map, const BombSettings& settings);
     unsigned collectBonus(Point cell, PlayerMap& map);
@@ -45,6 +45,7 @@ public:
     const auto& bombs() const { return bombs_; }
     const auto& brokenBlocks() const { return broken_; }
     const Level& level() const { return level_; }
+    RandomState randomState() const { return random_; }
     std::uint8_t flameMask(int x, int y) const;
 
 private:

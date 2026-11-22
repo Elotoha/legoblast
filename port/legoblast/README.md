@@ -41,7 +41,7 @@ Avec le clavier 1, **Alt droit** fait apparaître le joueur, les **flèches** le
 
 ### Palette matérielle et test Windows
 
-En mode à quatre sprites attachés, `SUITEO` charge les 32 premières entrées de `Lego_Sprites.col` à partir du registre 64. `SetScreenRegisters` sélectionne la banque 5 avec `BPLCON4 = $0055`. Les quatre plans du sprite adressent les registres 80 à 95. L’indice 0 est transparent et les indices 1 à 15 lisent les entrées 17 à 31 du fichier, en RVB 24 bits. La fenêtre est limitée à ce mode de rendu. Le mode à sprites indépendants utilise `MakeSprPal` et sa propre palette.
+En mode à quatre sprites attachés, `SUITEO` charge les 32 premières entrées de `Lego_Sprites.col` à partir du registre 64. `SetScreenRegisters` sélectionne la banque 5 avec `BPLCON4 = $0055`. Les quatre plans du sprite adressent les registres 80 à 95. L’indice 0 est transparent et les indices 1 à 15 lisent les entrées 17 à 31 du fichier, en RVB 24 bits. À partir de cinq commandes attribuées, le rendu utilise les sprites indépendants et les quatre entrées par joueur de `Mec8_normal.col`. La banque indépendante fournie compte 199 images par joueur. Les animations de résultat à partir de l’image 190 existent dans la banque attachée récente. Le rendu indépendant y revient à la pose de repos.
 
 Le ZIP Windows x64 est produit par le workflow [Joueurs LegoBlast Windows](https://github.com/Elotoha/legoblast/actions/workflows/legoblast-players-windows.yml). Extraire le ZIP entier, puis ouvrir `legoblast_players.exe`. Le jeu ouvre le niveau 001, fourni dans `data` avec la banque de sprites. La commande `legoblast_players.exe 021` ouvre « Test tuyaux ». Appuyer sur **Alt droit** puis utiliser les **flèches**. Pour comparer deux joueurs, lancer une nouvelle fenêtre et utiliser **Espace** et **flèche droite** pour l’apparition des claviers 2 et 3. Ne pas appuyer sur Alt droit dans cette fenêtre, car le clavier 1 exclut les deux autres dans le code d’origine.
 
@@ -53,7 +53,7 @@ La pose reprend `PoseBombe` et `NewBomb`. Elle échantillonne le Feu avant le d�
 
 Les flammes prennent aussi les coudes et les embranchements de tuyaux. Le code suit les bits d’ouverture de `TestToyoX` et `TestToyoY`. Une sortie dans l’axe conserve la propagation en ligne droite. Lorsque cette sortie est fermée, chaque branche latérale ouverte devient une flamme indépendante et perd une unité d’énergie. Les tests couvrent le passage dans les deux sens, le refus d’une entrée fermée, les coudes, l’embranchement, la priorité à la sortie droite et la réaction en chaîne après un coude.
 
-Les collisions de poussée de base et l’animation d’élimination par les flammes sont incluses. La transmission des maladies entre joueurs reste à traduire.
+Les collisions de poussée de base et l’animation d’élimination par les flammes sont incluses. Les joueurs actifs sur la même case de 16 pixels échangent leurs maladies selon `ColJoue` et `FileMal`.
 
 ## Bonus et déplacements spéciaux des bombes
 
@@ -73,3 +73,17 @@ Feu passe à la manche suivante après le résultat et fait apparaître le joueu
 Le moteur avance par pas de 20 ms. `legoblast_session_checks` vérifie cinq victoires consécutives, le match nul, la conservation des commandes, la pause, le départ différé du chronomètre, le premier bloc de la spirale et la résolution du temps écoulé avec une bombe active. Le workflow Windows lance également l'exécutable emballé avec `--smoke` et vérifie le passage entre deux manches au niveau 001.
 
 La barre de score est provisoire. La validation image par image sur Amiga, les animations de résultat, le podium et le son restent à intégrer.
+
+
+## Essayer les autres modes
+
+- `legoblast_players.exe 314 --teams` joue en équipes. Les emplacements alternent entre les deux équipes.
+- `legoblast_players.exe --free` ouvre le jeu libre et permet de rejoindre sans attendre les 40 VBL du match en cinq victoires.
+- `legoblast_players.exe --survivor` rejoue l'arène après une élimination si au moins deux joueurs survivent. Les survivants retrouvent leur commande.
+- `legoblast_players.exe --sequential` joue à partir du niveau choisi, dans l'ordre des fichiers d'arène.
+- `legoblast_players.exe --random` ouvre d'abord le niveau choisi, puis tire les arènes avec `Rnd_Engine`.
+- `legoblast_players.exe --dyna` génère l'arène à partir de `Lego_Level999.dat` et garde l'état du générateur entre les manches.
+
+Les quatre manettes SDL peuvent rejoindre avec le bouton du bas et se déplacer au stick gauche ou à la croix. Les règles de redémarrage « Don't Move » s'appliquent après une mort rapide. Le compteur de victoires est conservé et les joueurs reviennent automatiquement avec leur commande. Les bumpers surveillent les cases devant eux, animent leur piston et poussent les joueurs et les bombes.
+
+Le port utilise une graine déterministe. Le menu Amiga inclut aussi une liste d'arènes activables. Les options en ligne de commande chargent les niveaux présents sur disque et excluent le dernier monde en jeu individuel.

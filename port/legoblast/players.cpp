@@ -17,6 +17,10 @@ constexpr int TeleLast = 168;
 constexpr int BombTile = 29;
 constexpr int FirstSlabEnd = 7;
 constexpr int SecondSlabEnd = 16;
+constexpr int DiseaseTime = 1500;
+constexpr int ExtraBombs = 10;
+constexpr unsigned BumperStart = 231, BumperHit = 233, BumperEnd = 238;
+constexpr unsigned BumperTile = 27;
 
 std::int16_t word(int value) {
     return std::bit_cast<std::int16_t>(static_cast<std::uint16_t>(value));
@@ -94,6 +98,7 @@ void conveyor(Point& step, std::uint8_t slab) {
 
 Point testWall(Player& player, Point screen, Point step, PlayerMap& map) {
     const Point current{word(subcell(screen.x)), word(subcell(screen.y))};
+    player.bumperCell = (current.y & ~1) * GridStride + (current.x & ~1);
     const Point target{word(subcell(std::max(0, screen.x + (step.x < 0 ? -8 : step.x > 0 ? 10 : 0)))),
                        word(subcell(std::max(0, screen.y + (step.y < 0 ? -9 : step.y > 0 ? 8 : 0))))};
     const auto& view = std::as_const(map);
@@ -206,7 +211,7 @@ PlayerMap::PlayerMap(const Level& level) {
             else if ((raw >= 4 && raw <= FirstSlabEnd) || (raw >= 12 && raw <= SecondSlabEnd))
                 tile.slab = raw;
             else if (raw >= 8 && raw <= 11)
-                tile.visible = 27;
+                tile.visible = BumperTile;
             else
                 tile.visible = raw;
             for (int dy = 0; dy < 2; ++dy)
@@ -238,6 +243,20 @@ Point Player::center() const {
 
 void Players::prepare(const Level& level, bool newLevel, bool dynaLevel) {
     someoneAppeared_ = false;
+    bumpers_.clear();
+    constexpr std::array<Point, 4> directions{{{0, -1}, {0, 1}, {-1, 0}, {1, 0}}};
+    constexpr std::array<unsigned, 4> offsets{0, 16, 24, 8};
+    for (int i = 0; i < Width * Height; ++i) {
+        const auto tile = level.tiles[i];
+        if (tile < 8 || tile > 11)
+            continue;
+        const Point cell{word(2 * (i % Width)), word(2 * (i / Width))};
+        const auto direction = directions[tile - 8];
+        const Point first{word(cell.x + direction.x + (direction.x > 0)),
+                          word(cell.y + direction.y + (direction.y > 0))};
+        const Point second{word(cell.x + (direction.x == 0)), word(cell.y + (direction.x != 0))};
+        bumpers_.push_back({cell, direction, {first, second}, BumperStart, offsets[tile - 8]});
+    }
     for (std::size_t i = 0; i < players_.size(); ++i) {
         auto& player = players_[i];
         const auto old = player;
@@ -259,6 +278,48 @@ void Players::prepare(const Level& level, bool newLevel, bool dynaLevel) {
         player.autoFire = !dynaLevel && level.autoFire != 0;
         player.push = level.push != 0;
         player.frameBase = static_cast<int>(i) * 225;
+    }
+}
+
+void Players::tickBumpers(PlayerMap& map) {
+    const auto& visible = std::as_const(map);
+    for (auto& bumper : bumpers_) {
+        if (visible.at(bumper.cell.x, bumper.cell.y).visible != BumperTile)
+            continue;
+        const auto bombAt = [&](Point probe) { return visible.at(probe.x, probe.y).bomb; };
+        const auto playerInFront = [&](const Player& player) {
+            return player.canBeBumped && std::ranges::any_of(bumper.probes, [&](Point probe) {
+                const int y = probe.y - (bumper.direction.y < 0);
+                return player.bumperCell == y * GridStride + (probe.x & ~1);
+            });
+        };
+        const int first = bombAt(bumper.probes[0]);
+        const int second = bombAt(bumper.probes[1]);
+        if (bumper.state < 0) {
+            bumper.state = 0;
+        } else if (bumper.state == 0) {
+            // TestMov reads Off1 even if Test2 detected the bomb.
+            const auto index = static_cast<std::size_t>(std::max(first, 0));
+            const bool stoppedBomb = (first >= 0 || second >= 0) && index < map.bombVelocities.size() &&
+                !map.bombVelocities[index].x && !map.bombVelocities[index].y;
+            if (stoppedBomb || std::ranges::any_of(players_, playerInFront))
+                bumper.state = 1;
+        } else {
+            if (bumper.frame == BumperHit) {
+                for (const auto index : {first, second})
+                    if (index >= 0)
+                        map.bombVelocities.at(index) = bumper.direction;
+                for (auto& player : players_)
+                    if (playerInFront(player))
+                        player.bumper = {word(6 * bumper.direction.x), word(6 * bumper.direction.y)};
+            }
+            if (bumper.frame == BumperEnd) {
+                bumper.frame = BumperStart;
+                bumper.state = 0;
+            } else {
+                ++bumper.frame;
+            }
+        }
     }
 }
 
@@ -304,6 +365,65 @@ void Players::show(Player& player, PlayerTick& timing) {
 }
 
 namespace {
+bool canShareDisease(const Player& player) {
+    return player.activation == Activation::Ready && !player.dead &&
+        !player.deathFrame && !player.teleportPhase;
+}
+
+// FileMal copies the remaining time and halves the donor's time. Speed is
+// refreshed in full and only replaces another speed disease if faster.
+void shareDisease(Player& donor, Player& recipient) {
+    for (std::size_t i = 0; i < donor.effects.size(); ++i) {
+        auto& time = donor.effects[i];
+        if (!time || (recipient.effects[i] && (i != 3 || donor.speed <= recipient.speed)))
+            continue;
+        recipient.effects[i] = time;
+        if (i != 3)
+            time /= 2;
+        switch (i) {
+        case 1:
+            recipient.storedEnergy = recipient.flameEnergy;
+            recipient.flameEnergy = donor.flameEnergy;
+            break;
+        case 2:
+            recipient.storedFuse = donor.storedFuse;
+            recipient.storedLoops = donor.storedLoops;
+            recipient.fuse = donor.fuse;
+            recipient.loops = donor.loops;
+            break;
+        case 3:
+            recipient.storedSpeed = recipient.speed;
+            recipient.speed = donor.speed;
+            recipient.effects[i] = DiseaseTime;
+            break;
+        case 5:
+            recipient.bombCapacity += ExtraBombs;
+            recipient.temporaryBombs += ExtraBombs;
+            break;
+        case 6: recipient.immunityFlash = 10; break;
+        default: break;
+        }
+    }
+}
+
+void transferOnContact(std::array<Player, PlayerCount>& players) {
+    for (auto it = players.begin(); it != players.end(); ++it) {
+        if (!canShareDisease(*it))
+            continue;
+        const auto center = it->center();
+        for (auto earlier = players.begin(); earlier != it; ++earlier) {
+            if (!canShareDisease(*earlier))
+                continue;
+            const auto other = earlier->center();
+            if (subcell(center.x) / 2 == subcell(other.x) / 2 &&
+                subcell(center.y) / 2 == subcell(other.y) / 2) {
+                shareDisease(*it, *earlier);
+                shareDisease(*earlier, *it);
+            }
+        }
+    }
+}
+
 // TestMalad processes M1 through M9 and defers subsequent timers if one expires.
 void tickEffects(Player& player) {
     for (std::size_t i = 0; i < player.effects.size(); ++i) {
@@ -314,7 +434,10 @@ void tickEffects(Player& player) {
         case 1: player.flameEnergy = player.storedEnergy; break;
         case 2: player.fuse = player.storedFuse; player.loops = player.storedLoops; break;
         case 3: player.speed = player.storedSpeed; break;
-        case 5: player.bombCapacity -= player.temporaryBombs; break;
+        case 5:
+            player.bombCapacity -= player.temporaryBombs;
+            player.temporaryBombs = 0;
+            break;
         case 6: player.imageOffset = 0; break;
         default: break;
         }
@@ -325,7 +448,7 @@ void tickEffects(Player& player) {
 
 // TestMort's bonus table in Sprites.i, without the Amiga HUD and sound calls.
 void Players::applyBonus(Player& player, unsigned number, PlayerTick& timing, BombField& bombs, PlayerMap& map) {
-    constexpr int longTime = 1500, shortTime = 750;
+    constexpr int longTime = DiseaseTime, shortTime = 750;
     auto& effects = player.effects;
     switch (number) {
     case 1:
@@ -362,8 +485,8 @@ void Players::applyBonus(Player& player, unsigned number, PlayerTick& timing, Bo
             player.temporaryBombs = 0;
         effects[4] = 0;
         effects[5] = longTime;
-        player.temporaryBombs += 10;
-        player.bombCapacity += 10;
+        player.temporaryBombs += ExtraBombs;
+        player.bombCapacity += ExtraBombs;
         break;
     case 15: effects[6] = shortTime; player.immunityFlash = 10; break;
     case 16:
@@ -391,9 +514,12 @@ void Players::applyBonus(Player& player, unsigned number, PlayerTick& timing, Bo
 }
 
 void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map, BombField* bombs) {
+    if (!timing.winnersPhase)
+        transferOnContact(players_);
     join(controls);
     for (auto& player : players_) {
         player.visible = false;
+        player.canBeBumped = false;
         if (player.dead || timing.winnersPhase ||
             (timing.fiveWinMatch && (timing.levelInfoState == 0 || timing.autoCounter < 40)))
             continue;
@@ -420,6 +546,7 @@ void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map,
             continue;
         }
 
+        player.canBeBumped = true;
         auto step = movement(input, player.speed);
         const unsigned owner = static_cast<unsigned>(&player - players_.data());
         const bool heldFire = player.autoFire || player.effects[0] || player.clock;
@@ -463,6 +590,7 @@ void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map,
         const bool crushed = visible == 1 || visible == 2 || visible == 3 || visible == 30 || visible == 31;
         if (bombs && ((bombs->flameMask(current.x, current.y) && !player.effects[6]) || crushed)) {
             bombs->releaseClock(owner);
+            player.noMoveDeaths = timing.survivor ? 20 : player.noMoveDeaths + 1;
             player.deathFrame = 72 + 1; // TestMort enters AnimMort in the same VBL.
             player.frame = player.deathFrame;
             continue;

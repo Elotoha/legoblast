@@ -35,6 +35,13 @@ int main(int argc, char** argv) {
         check(colors.size() == 16 * 24 * 4 &&
               std::equal(firstPixels.begin(), firstPixels.end(), colors.begin()),
               "AGA bank 5, bitplane order and transparent color zero");
+        const auto independentBank = readBytes(binary / "Lego_Sprites8.dat");
+        const auto independentIndex = readBytes(binary / "Lego_SpritesIndex8.dat");
+        const auto independentColors = readBytes(binary / "Mec8_normal.col");
+        const auto player1 = independentSprite(independentBank, independentIndex, independentColors, 0, 33);
+        const auto player6 = independentSprite(independentBank, independentIndex, independentColors, 5, 33);
+        check(player1 != player6 && player6.size() == 16 * 24 * 4 &&
+              std::ranges::count(player6, std::uint8_t{255}) > 0, "independent six-player bank and palette");
         int count = 0;
         const auto bank = readBytes(binary / "Lego_Blocs.dat");
         int emptyNames = 0;
