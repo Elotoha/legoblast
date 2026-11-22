@@ -20,6 +20,14 @@ L’assemblage avec `vasm` atteint les inclusions du NDK AmigaOS et s’arrête 
 3. Relever l’état aux frontières utiles. Consigner au minimum le niveau, la phase de manche, les coordonnées et états des joueurs, les minuteries de bombes, les cellules et phases de flamme, le chrono, le score et l’état aléatoire. Donner aux objets des identifiants stables. Les adresses mémoire et le nombre d’images présentées par la machine hôte ne constituent pas des écarts d’état du jeu.
 4. Comparer chronologiquement. Pour le premier écart, isoler l’entrée qui le provoque, la phase, le sous-système, l’attendu et l’observé. Pour le rendu, comparer des images logiques sur des transitions connues. Pour l’audio, comparer d’abord les événements, le déclenchement et l’affectation des canaux, puis le rendu sonore en contrôlant la configuration du mixage.
 
+## Vérifications du port C++ au jalon du match complet
+
+Le scénario automatisé joue cinq manches sur l’arène 001 avec deux joueurs, vérifie la conservation des commandes et du score, puis ouvre le podium. Il a passé les tests sous Linux et avec l’exécutable emballé par GitHub Actions sous Windows x64. Les tests unitaires couvrent aussi les égalités, la spirale de fin de niveau, le chronomètre, l’élimination des absents, les reprises et la transmission des maladies. [Compilation Windows](https://github.com/Elotoha/legoblast/actions/runs/45077967393)
+
+Les deux binaires Amiga ont été relancés séparément sous FS-UAE avec les données et préférences extraites de l’archive. La distribution Aminet a affiché le menu d’options. Le binaire du dépôt a atteint l’écran « Ready?! » de Dynablaster. L’encart de départ observé reste à reproduire dans le port. La comparaison des transitions de match et des états à chaque VBL reste à effectuer.
+
+Un nouvel essai avec le NDK AmigaOS 3.2 a franchi l’inclusion `exec/types.i`. L’assemblage avec `vasm` et sa compatibilité Devpac s’arrête encore sur des macros telles que `AgaOnly`, `CpuMini` et `LTest`, ainsi que sur la casse d’un chemin de palette dans l’environnement Linux. Aucun exécutable de référence n’a été reconstruit à cette étape. [Source du jeu](../../amiga/src/lego17.asm)
+
 ## Scénarios de parité à préparer
 
 Les scénarios suivants sont proposés pour la phase suivante. Chacun doit produire des résultats de référence avec les exécutables identifiés ci-dessus si le chemin concerné est accessible.
