@@ -11,7 +11,7 @@ class SoundOutput {
 public:
     SoundOutput(const std::filesystem::path& root, unsigned track, bool smoke);
     ~SoundOutput();
-    void tick(std::span<const SoundRequest> requests, bool paused, bool results);
+    void tick(std::span<const SoundRequest> requests, bool paused, bool results, bool podium = false);
 
 private:
     struct Playback;

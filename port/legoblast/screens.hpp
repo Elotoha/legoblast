@@ -1,0 +1,63 @@
+#pragma once
+
+#include "session.hpp"
+
+#include <string_view>
+
+namespace legoblast {
+class ScreenArt {
+public:
+    static constexpr int Width = 320, Height = 256;
+
+    ScreenArt(const std::filesystem::path& image, const std::filesystem::path& palette);
+    const Bytes& indices() const { return indices_; }
+    Bytes rgb(const Bytes& image, unsigned brightness = 100, bool grey = false, unsigned cycle = 0) const;
+    void applyMenuGradient();
+
+private:
+    Bytes indices_, palette_;
+};
+
+class PodiumArt {
+public:
+    explicit PodiumArt(const std::filesystem::path& binary);
+    std::vector<unsigned> ranking(const Session& session) const;
+    Bytes render(const Session& session) const;
+
+private:
+    void drawPlayer(Bytes& image, int x, int y, unsigned animation, unsigned frame, unsigned player) const;
+    ScreenArt backdrop_;
+    Bytes feelings_;
+};
+
+struct ArenaEntry {
+    std::filesystem::path file;
+    Level level;
+    unsigned number;
+    bool enabled{true};
+};
+std::vector<ArenaEntry> loadArenaList(const std::filesystem::path& binary);
+
+enum class MenuInput { Up, Down, Left, Right, Fire, Back };
+enum class MenuResult { Continue, Start, Exit };
+
+class Menus {
+public:
+    Menus(const std::filesystem::path& binary, std::vector<ArenaEntry>& arenas);
+    MenuResult handle(MenuInput input);
+    Bytes render(unsigned tick) const;
+    const auto& options() const { return options_; }
+    const auto& levelFile() const { return arenas_[arena_].file; }
+
+private:
+    void drawSelection(Bytes& picture, unsigned bob, unsigned offset) const;
+    void print(Bytes& picture, int x, int y, std::string_view phrase, unsigned color = 31) const;
+
+    ScreenArt main_, optionsArt_;
+    Bytes boxes_, font_;
+    std::vector<ArenaEntry>& arenas_;
+    MatchOptions options_{};
+    int page_{}, row_{}, section_{2}, field_{-1}, control_{4}, definition_{};
+    std::size_t arena_{};
+};
+}

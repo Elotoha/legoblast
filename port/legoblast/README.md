@@ -43,7 +43,7 @@ Avec le clavier 1, **Alt droit** fait apparaître le joueur, les **flèches** le
 
 En mode à quatre sprites attachés, `SUITEO` charge les 32 premières entrées de `Lego_Sprites.col` à partir du registre 64. `SetScreenRegisters` sélectionne la banque 5 avec `BPLCON4 = $0055`. Les quatre plans du sprite adressent les registres 80 à 95. L’indice 0 est transparent et les indices 1 à 15 lisent les entrées 17 à 31 du fichier, en RVB 24 bits. À partir de cinq commandes attribuées, le rendu utilise les sprites indépendants et les quatre entrées par joueur de `Mec8_normal.col`. La banque indépendante fournie compte 199 images par joueur. Les animations de résultat à partir de l’image 190 existent dans la banque attachée récente. Le rendu indépendant y revient à la pose de repos.
 
-Le ZIP Windows x64 est produit par le workflow [Joueurs LegoBlast Windows](https://github.com/Elotoha/legoblast/actions/workflows/legoblast-players-windows.yml). Extraire le ZIP entier, puis ouvrir `legoblast_players.exe`. Le jeu ouvre le niveau 001, fourni dans `data` avec la banque de sprites. La commande `legoblast_players.exe 021` ouvre « Test tuyaux ». Appuyer sur **Alt droit** puis utiliser les **flèches**. Pour comparer deux joueurs, lancer une nouvelle fenêtre et utiliser **Espace** et **flèche droite** pour l’apparition des claviers 2 et 3. Ne pas appuyer sur Alt droit dans cette fenêtre, car le clavier 1 exclut les deux autres dans le code d’origine.
+Le ZIP Windows x64 est produit par le workflow [Joueurs LegoBlast Windows](https://github.com/Elotoha/legoblast/actions/workflows/legoblast-players-windows.yml). Extraire le ZIP entier, puis ouvrir `legoblast_players.exe`. Le menu s'ouvre au démarrage. Sélectionner **Start** avec **Entrée** pour jouer le niveau 001, ou **Options** pour configurer l'arène et le type de match. La commande `legoblast_players.exe 021` ouvre « Test tuyaux ». Appuyer sur **Alt droit** puis utiliser les **flèches**. Pour comparer deux joueurs, lancer une nouvelle fenêtre et utiliser **Espace** et **flèche droite** pour l’apparition des claviers 2 et 3. Ne pas appuyer sur Alt droit dans cette fenêtre, car le clavier 1 exclut les deux autres dans le code d’origine.
 
 ## Tester les bombes
 
@@ -70,9 +70,9 @@ Le premier joueur à apparaître lance le compte à rebours. La première élimi
 
 Feu passe à la manche suivante après le résultat et fait apparaître le joueur avec son périphérique précédent. Pour essayer à deux sur le même clavier, utiliser **W**, **R**, **3** ou **4**, **E** et **Espace** pour le clavier 2, puis **7**, **9**, **{** et **8** sur le pavé numérique et **flèche droite** pour le clavier 3. **P** met le jeu en pause. **F5** recommence le match.
 
-Le moteur avance par pas de 20 ms. `legoblast_session_checks` vérifie cinq victoires consécutives, le match nul, la conservation des commandes, la pause, le départ différé du chronomètre, le premier bloc de la spirale et la résolution du temps écoulé avec une bombe active. Le workflow Windows lance également l'exécutable emballé avec `--smoke` et vérifie le passage entre deux manches au niveau 001.
+Le moteur avance par pas de 20 ms. `legoblast_session_checks` vérifie cinq victoires consécutives, le match nul, la conservation des commandes, la pause, le départ différé du chronomètre, le premier bloc de la spirale et la résolution du temps écoulé avec une bombe active. Le workflow Windows lance également l'exécutable emballé avec `--smoke` et vérifie le menu, cinq victoires au niveau 001 et l'ouverture du podium.
 
-La barre de joueurs utilise les portraits, chiffres et jauges Amiga. Les joueurs survivants reprennent les séquences de victoire et d'égalité de `ChooseAnim` et `AnimEnd`. Feu démarre un nouveau match après la cinquième victoire. Le podium, les menus Amiga, le joueur Micro et la comparaison image par image avec l’Amiga restent à intégrer.
+La barre de joueurs utilise les portraits, chiffres et jauges Amiga. Les joueurs survivants reprennent les séquences de victoire et d'égalité de `ChooseAnim` et `AnimEnd`. Après la cinquième victoire, Feu ouvre le podium avec le fond, la palette et les animations de l'Amiga. Relâcher puis appuyer de nouveau pour afficher le récapitulatif. Le tableau de statistiques affiche les victoires et les bombes posées. Feu revient au menu ou démarre un nouveau match en lancement direct.
 
 
 ## Essayer les autres modes
@@ -86,15 +86,22 @@ La barre de joueurs utilise les portraits, chiffres et jauges Amiga. Les joueurs
 
 Les quatre manettes SDL peuvent rejoindre avec le bouton du bas et se déplacer au stick gauche ou à la croix. Les règles de redémarrage « Don't Move » s'appliquent après une mort rapide. Le compteur de victoires est conservé et les joueurs reviennent automatiquement avec leur commande. Les bumpers surveillent les cases devant eux, animent leur piston et poussent les joueurs et les bombes.
 
-Le port utilise une graine déterministe. Le menu Amiga inclut aussi une liste d'arènes activables. Les options en ligne de commande chargent les niveaux présents sur disque et excluent le dernier monde en jeu individuel.
+Le port utilise une graine déterministe. Les options en ligne de commande chargent les niveaux présents sur disque et excluent le dernier monde en jeu individuel. Dans **Options**, choisir **Arena** pour activer ou désactiver un niveau avec **Entrée** sur son nom. **Go** revient au menu principal.
 
 
 ## Ressources sonores
 
 Le paquet contient les 20 effets de `samples.def` au format WAV PCM 16 bits et les cinq modules P61 au format FLAC. La conversion des effets conserve les mots PCM envoyés à Paula par `ChargeOneSon` et utilise la période du sample pour calculer sa fréquence PAL. Les pistes de jeu sont rendues en trois canaux Tracker, avec un canal réservé aux effets pendant la partie. Le FLAC conserve sans perte le rendu de xmp en stéréo à 48 kHz. La comparaison du mix et des points de boucle avec P61 sur Amiga reste à effectuer.
 
-La musique 1 démarre par défaut. Lancer `legoblast_players.exe --music=2` pour choisir la piste 2 ou `legoblast_players.exe --music=0` pour jouer avec les effets seuls. La piste du menu est incluse parmi les ressources converties. Pour régénérer les fichiers avec xmp 4.2, libxmp 4.6 et FFmpeg disponibles dans le PATH, exécuter depuis la racine du dépôt
+La musique 1 démarre par défaut. Lancer `legoblast_players.exe --music=2` pour choisir la piste 2 ou `legoblast_players.exe --music=0` pour jouer avec les effets seuls. Le menu joue `Mod_Menu.flac`. Pour régénérer les fichiers avec xmp 4.2, libxmp 4.6 et FFmpeg disponibles dans le PATH, exécuter depuis la racine du dépôt
 
 ```sh
 python3 port/legoblast/export_audio.py amiga/src port/legoblast/audio
 ```
+
+
+## Écarts encore ouverts
+
+- Le joueur Micro et son routage sont à porter depuis `Micro.i`.
+- Les écrans d'introduction, de crédits et de bonus, la sauvegarde des préférences et le tableau complet de statistiques sont à porter.
+- Les traces VBL et les comparaisons d'images et de mixage avec les deux binaires Amiga restent à établir. Le menu démarre au niveau 001 et la résolution est agrandie en mise à l'échelle entière.

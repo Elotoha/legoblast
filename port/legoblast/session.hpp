@@ -4,7 +4,7 @@
 #include "players.hpp"
 
 namespace legoblast {
-enum class RoundPhase { AwaitingPlayers, Running, Draining, Result, MatchComplete };
+enum class RoundPhase { AwaitingPlayers, Running, Draining, Result, MatchComplete, Podium, Statistics };
 enum class ArenaMode { Fixed, Sequential, Random, Dynablaster };
 struct MatchOptions {
     bool fiveWins{true};
@@ -36,6 +36,7 @@ public:
     unsigned remaining() const { return remaining_; }
     unsigned elapsed() const { return timing_.autoCounter; }
     unsigned roundNumber() const { return roundNumber_; }
+    unsigned podiumTime() const { return podiumTime_; }
     bool paused() const { return paused_; }
     bool alert() const { return alert_; }
     bool isTeamMatch() const { return options_.teams; }
@@ -72,6 +73,8 @@ private:
     std::size_t nextClosing_{};
     unsigned closingDelay_{}, warning_{}, remaining_{}, resultDelay_{}, appeared_{}, roundNumber_{};
     unsigned winnerAnimation_{}, drawAnimation_{};
+    unsigned podiumTime_{}, cameraTime_{};
+    bool awaitingRelease_{};
     bool paused_{}, alert_{}, entriesClosed_{}, retrying_{};
     bool arenasFinished_{};
     RoundPhase phase_{RoundPhase::AwaitingPlayers};

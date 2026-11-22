@@ -13,6 +13,8 @@ constexpr unsigned FillImages = 5;
 constexpr unsigned FillFrameDelay = 3;
 constexpr unsigned FillBlockIndex = 19;
 constexpr unsigned DontMoveSeconds = 6;
+constexpr unsigned PodiumFadeIn = 100;
+constexpr unsigned PodiumToGrey = 100;
 
 bool hasFire(const Controls& input) { return std::ranges::any_of(input, &Buttons::fire); }
 bool appeared(const Player& player) { return player.activation != Activation::Hidden; }
@@ -104,15 +106,39 @@ void Session::tick(const Controls& input) {
     sounds_.clear();
     if (paused_)
         return;
+    if (phase_ == RoundPhase::Podium || phase_ == RoundPhase::Statistics) {
+        ++podiumTime_;
+        if (!hasFire(input))
+            awaitingRelease_ = false;
+        if (phase_ == RoundPhase::Podium && cameraTime_ && podiumTime_ - cameraTime_ >= PodiumToGrey) {
+            phase_ = RoundPhase::Statistics;
+            awaitingRelease_ = true;
+        } else if (!awaitingRelease_ && hasFire(input)) {
+            if (phase_ == RoundPhase::Statistics)
+                resetMatch();
+            else if (!cameraTime_ && podiumTime_ >= PodiumFadeIn) {
+                cameraTime_ = podiumTime_;
+                sounds_.push_back({SoundCue::Camera, 42});
+            }
+        }
+        return;
+    }
     if (phase_ == RoundPhase::Result || phase_ == RoundPhase::MatchComplete) {
         players_.tickResult();
         if (resultDelay_)
             --resultDelay_;
         if (!resultDelay_ && hasFire(input)) {
-            if (phase_ == RoundPhase::MatchComplete)
-                resetMatch();
-            else
+            if (phase_ != RoundPhase::MatchComplete) {
                 advanceArena();
+            } else if (arenasFinished_) {
+                resetMatch();
+            } else {
+                phase_ = RoundPhase::Podium;
+                podiumTime_ = cameraTime_ = 0;
+                awaitingRelease_ = true;
+                sounds_.push_back({SoundCue::MatchVictory, 41, 3});
+                sounds_.push_back({SoundCue::Victory, 40});
+            }
         }
         return;
     }

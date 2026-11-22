@@ -13,6 +13,7 @@ struct SoundOutput::Playback {
     std::array<Sound, static_cast<unsigned>(SoundCue::Count)> effects{};
     Music music{};
     Mixer mixer;
+    Mixer podiumMixer{4};
     std::unique_ptr<SDL_AudioStream, decltype(&SDL_DestroyAudioStream)> stream{nullptr, SDL_DestroyAudioStream};
     bool smoke;
 
@@ -24,7 +25,7 @@ struct SoundOutput::Playback {
             effects[i].volume = 0.5f;
         }
         if (track) {
-            const auto file = "Mod_Game" + std::to_string(track) + ".flac";
+            const auto file = track == 9 ? "Mod_Menu.flac" : "Mod_Game" + std::to_string(track) + ".flac";
             music.stems.push_back(loadAudioClip(root / file, SF_FORMAT_FLAC));
             music.loopEnd = music.stems.front().frames();
             music.volume = 35.f / 64;
@@ -48,22 +49,23 @@ SoundOutput::SoundOutput(const std::filesystem::path& root, unsigned track, bool
 
 SoundOutput::~SoundOutput() = default;
 
-void SoundOutput::tick(std::span<const SoundRequest> requests, bool paused, bool results) {
+void SoundOutput::tick(std::span<const SoundRequest> requests, bool paused, bool results, bool podium) {
     auto& output = *playback_;
     if (!output.stream)
         return;
+    auto& mixer = podium ? output.podiumMixer : output.mixer;
     for (const auto& request : requests) {
         auto& effect = output.effects.at(static_cast<unsigned>(request.cue));
         effect.priority = request.priority;
-        output.mixer.play(effect, request.repetitions);
+        mixer.play(effect, request.repetitions);
     }
     constexpr std::size_t samplesPerTick = 2 * Mixer::Rate / 50;
     constexpr int bytesPerTick = samplesPerTick * sizeof(float);
-    output.mixer.setMusicVolume((paused ? 5.f : results ? 20.f : 35.f) / 64);
+    mixer.setMusicVolume((paused ? 5.f : results ? 20.f : 35.f) / 64);
     if (SDL_GetAudioStreamQueued(output.stream.get()) >= 3 * bytesPerTick)
         return;
     std::array<float, samplesPerTick> stereo;
-    output.mixer.render(stereo);
+    mixer.render(stereo);
     if (!SDL_PutAudioStreamData(output.stream.get(), stereo.data(), bytesPerTick) && output.smoke)
         throw std::runtime_error(SDL_GetError());
 }

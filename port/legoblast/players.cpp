@@ -263,6 +263,8 @@ void Players::prepare(const Level& level, bool newLevel, bool dynaLevel) {
         player = {};
         player.control = old.control;
         player.roundsPlayed = old.roundsPlayed;
+        player.bombsPlanted = old.bombsPlanted;
+        player.bonusesTaken = old.bonusesTaken;
         player.animationTicks = old.animationTicks;
         player.repeatFire = old.repeatFire;
         player.canPush = old.canPush;
@@ -489,6 +491,7 @@ void Players::applyBonus(Player& player, unsigned number, PlayerTick& timing, Bo
     constexpr int longTime = DiseaseTime, shortTime = 750;
     auto& effects = player.effects;
     if (number) {
+        ++player.bonusesTaken;
         player.lastBonus = number;
         timing.sounds.push_back({number == 10 ? SoundCue::Nuclear : SoundCue::Bonus, number == 10 ? 1 : -7});
     }
@@ -620,9 +623,10 @@ void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map,
                 bombs->releaseClock(owner);
         } else {
             player.repeatFire = (player.repeatFire + 1) & 3;
-            if (!player.repeatFire && !timing.gameOver && bombs)
+            if (!player.repeatFire && !timing.gameOver && bombs &&
                 bombs->plant(owner, screen, map, {player.bombCapacity, player.clock ? 26 : player.fuse,
-                    player.clock ? 2 : player.loops, player.flameEnergy, player.effects[7] != 0, player.clock});
+                    player.clock ? 2 : player.loops, player.flameEnergy, player.effects[7] != 0, player.clock}))
+                ++player.bombsPlanted;
         }
         center(player, screen, step, std::as_const(map));
         const auto desired = step;

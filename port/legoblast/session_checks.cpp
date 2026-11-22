@@ -78,6 +78,15 @@ void fiveWins() {
             check(session.roundNumber() == win + 1 && session.players()[0].control == 0 &&
                   session.players()[1].control == 1, "next round lost controllers");
     }
+    check(session.phase() == RoundPhase::Podium && session.score()[1] == 5, "fifth victory did not open the podium");
+    advance(session, 100, next);
+    check(session.phase() == RoundPhase::Podium, "held Fire skipped the podium");
+    session.tick({});
+    session.tick(next);
+    advance(session, 100, next);
+    check(session.phase() == RoundPhase::Statistics, "podium did not open the statistics");
+    session.tick({});
+    session.tick(next);
     check(session.score()[1] == 0 && session.roundNumber() == 1, "new match did not reset scores");
 }
 

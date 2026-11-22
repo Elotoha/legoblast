@@ -1,4 +1,5 @@
 #include "hud.hpp"
+#include "screens.hpp"
 #include "sound_output.hpp"
 #include "sprite.hpp"
 
@@ -23,6 +24,7 @@ constexpr int BoardHeight = Height * TileSize;
 constexpr int ScreenWidth = Hud::Width / 2;
 constexpr int ScreenHeight = BoardHeight + Hud::Height;
 constexpr int BoardX = (ScreenWidth - BoardWidth) / 2;
+enum class ViewResult { Closed, MainMenu };
 
 void check(bool success) {
     if (!success)
@@ -46,6 +48,13 @@ Controls keyboard() {
 
 class Gamepads {
 public:
+    Gamepads() {
+        int count = 0;
+        std::unique_ptr<SDL_JoystickID, decltype(&SDL_free)> ids(SDL_GetGamepads(&count), SDL_free);
+        for (int i = 0; ids && i < count && i < static_cast<int>(pads_.size()); ++i)
+            pads_[i] = SDL_OpenGamepad(ids.get()[i]);
+    }
+
     ~Gamepads() {
         for (auto* pad : pads_)
             if (pad)
@@ -54,6 +63,8 @@ public:
 
     void update(const SDL_Event& event) {
         if (event.type == SDL_EVENT_GAMEPAD_ADDED) {
+            if (std::ranges::any_of(pads_, [&](auto* pad) { return pad && SDL_GetGamepadID(pad) == event.gdevice.which; }))
+                return;
             const auto slot = std::ranges::find(pads_, nullptr);
             if (slot != pads_.end())
                 *slot = SDL_OpenGamepad(event.gdevice.which);
@@ -95,37 +106,30 @@ Texture texture(SDL_Renderer* renderer, SDL_PixelFormat format, int width, int h
 }
 
 Session makeSession(const std::filesystem::path& binary, const std::filesystem::path& level,
-                    MatchOptions options) {
+                    MatchOptions options, const std::vector<ArenaEntry>& arenaList) {
     if (options.arena == ArenaMode::Fixed)
         return Session(loadLevel(level), options);
     if (options.arena == ArenaMode::Dynablaster)
         return Session(loadLevel(binary / "Lego_Level999.dat"), options);
     std::vector<Level> levels;
     std::size_t startingIndex = 0;
-    bool found = false;
-    const int worlds = options.teams ? 6 : 5;
-    for (int world = 0; world < worlds; ++world)
-        for (int index = 1; index <= 30; ++index) {
-            const auto number = std::to_string(1000 + 100 * world + index).substr(1);
-            const auto file = "Lego_Level" + number + ".dat";
-            const auto path = binary / file;
-            if (!std::filesystem::is_regular_file(path))
-                continue;
-            if (level.filename() == path.filename()) {
-                startingIndex = levels.size();
-                found = true;
-            }
-            levels.push_back(loadLevel(path));
-        }
-    if (!found)
-        throw std::runtime_error("starting level is not in the arena list for this mode");
+    for (const auto& entry : arenaList) {
+        if (!entry.enabled || (!options.teams && entry.number >= 500))
+            continue;
+        if (level.filename() == entry.file.filename())
+            startingIndex = levels.size();
+        levels.push_back(entry.level);
+    }
+    if (levels.empty())
+        throw std::runtime_error("no enabled arenas in this mode");
     return Session(std::move(levels), startingIndex, options);
 }
 
-int view(const std::filesystem::path& root, const std::filesystem::path& spriteFile,
-         const std::filesystem::path& levelFile, bool smoke, MatchOptions options, unsigned track) {
+ViewResult view(const std::filesystem::path& root, const std::filesystem::path& spriteFile,
+         const std::filesystem::path& levelFile, bool smoke, MatchOptions options, unsigned track,
+         const std::vector<ArenaEntry>& arenaList, bool useMenu = false) {
     const auto binary = root / "binary";
-    auto session = makeSession(binary, levelFile, options);
+    auto session = makeSession(binary, levelFile, options, arenaList);
     const auto& level = session.arena();
     const auto bank = readBytes(binary / "Lego_Blocs.dat");
     auto boardPalette = readLevelPalette(root, level.palette);
@@ -144,6 +148,18 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
     const auto independentIndices = readBytes(binary / "Lego_SpritesIndex8.dat");
     const auto independentPalette = readBytes(binary / "Mec8_normal.col");
     const Hud hud(spriteFile.parent_path());
+    const PodiumArt podium(spriteFile.parent_path());
+    if (smoke) {
+        auto arenas = loadArenaList(binary);
+        Menus menus(spriteFile.parent_path(), arenas);
+        menus.render(15);
+        menus.handle(MenuInput::Down);
+        menus.handle(MenuInput::Fire);
+        menus.render(15);
+        menus.handle(MenuInput::Up);
+        menus.handle(MenuInput::Fire);
+        menus.render(15);
+    }
     unsigned smokeFrame = 0;
 
     check(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD));
@@ -162,6 +178,7 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
     auto background = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, BoardWidth, BoardHeight);
     auto bar = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, Hud::Width, Hud::Height);
     auto wood = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, ScreenWidth, Hud::Height);
+    auto podiumTexture = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, ScreenArt::Width, ScreenArt::Height);
     auto sprite = texture(renderer.get(), SDL_PIXELFORMAT_RGBA32, SpriteWidth, SpriteHeight);
     check(SDL_SetTextureBlendMode(sprite.get(), SDL_BLENDMODE_BLEND));
 
@@ -172,6 +189,8 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
             pads.update(event);
+            if (useMenu && event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE)
+                return ViewResult::MainMenu;
             if (event.type == SDL_EVENT_QUIT ||
                 (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE))
                 running = false;
@@ -191,14 +210,53 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
             if (smoke) {
                 input = {};
                 ++smokeFrame;
-                const bool acknowledge = session.phase() == RoundPhase::Result;
+                const auto tick = session.elapsed() + 1;
+                const bool join = tick <= 40;
+                const bool acknowledge = session.phase() == RoundPhase::Result ||
+                                         session.phase() == RoundPhase::MatchComplete;
                 input[static_cast<std::size_t>(Control::Joy0)].fire =
-                    smokeFrame == 1 || smokeFrame == 425 || acknowledge;
-                input[static_cast<std::size_t>(Control::Joy1)].fire = smokeFrame == 1;
+                    join || tick == 425 || acknowledge;
+                input[static_cast<std::size_t>(Control::Joy1)].fire = join;
             }
+            const auto previousPhase = session.phase();
             session.tick(input);
+            if (useMenu && previousPhase == RoundPhase::Statistics && session.phase() == RoundPhase::AwaitingPlayers)
+                return ViewResult::MainMenu;
             sound.tick(session.sounds(), session.paused(),
-                       session.phase() == RoundPhase::Result || session.phase() == RoundPhase::MatchComplete);
+                       session.phase() == RoundPhase::Result || session.phase() == RoundPhase::MatchComplete,
+                       session.phase() == RoundPhase::Podium || session.phase() == RoundPhase::Statistics);
+        }
+        if (session.phase() == RoundPhase::Podium || session.phase() == RoundPhase::Statistics) {
+            const auto picture = podium.render(session);
+            check(SDL_UpdateTexture(podiumTexture.get(), nullptr, picture.data(), ScreenArt::Width * 3));
+            check(SDL_RenderClear(renderer.get()));
+            const SDL_FRect fullScreen{0, 0, ScreenArt::Width, ScreenArt::Height};
+            check(SDL_RenderTexture(renderer.get(), podiumTexture.get(), nullptr, &fullScreen));
+            if (session.phase() == RoundPhase::Statistics) {
+                const SDL_FRect table{30, 59, 260, 66};
+                check(SDL_SetRenderDrawColor(renderer.get(), 16, 16, 16, 255));
+                check(SDL_RenderFillRect(renderer.get(), &table));
+                check(SDL_SetRenderDrawColor(renderer.get(), 255, 255, 255, 255));
+                check(SDL_RenderDebugText(renderer.get(), 38, 62, "JOUEUR  VICTOIRES  BOMBES"));
+                float line = 72;
+                for (const auto slot : podium.ranking(session)) {
+                    const auto& player = session.players()[slot];
+                    const auto wins = session.score()[session.isTeamMatch() ? slot % 2 : slot];
+                    const auto label = std::to_string(slot + 1) + "       " + std::to_string(wins) +
+                        "          " + std::to_string(player.bombsPlanted);
+                    check(SDL_RenderDebugText(renderer.get(), 38, line, label.c_str()));
+                    line += 8;
+                }
+            }
+            check(SDL_RenderPresent(renderer.get()));
+            if (smoke) {
+                if (session.roundNumber() != 5 || session.score()[1] != 5 ||
+                    session.players()[0].control != 0 || session.players()[1].control != 1)
+                    throw std::runtime_error("match smoke test lost the score or controller");
+                break;
+            }
+            SDL_Delay(2);
+            continue;
         }
         const auto& bombs = session.bombs();
         const auto& map = session.map();
@@ -276,17 +334,100 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
             check(SDL_RenderTexture(renderer.get(), sprite.get(), nullptr, &box));
         }
         check(SDL_RenderPresent(renderer.get()));
-        if (smoke && session.roundNumber() == 2) {
-            if (session.score()[1] != 1 || session.players()[0].control < 0 ||
-                session.players()[1].control < 0)
-                throw std::runtime_error("match smoke test lost the score or controller");
-            break;
-        }
-        if (smoke && smokeFrame >= 1200)
-            throw std::runtime_error("match smoke test did not finish a round");
+        if (smoke && smokeFrame >= 6000)
+            throw std::runtime_error("match smoke test did not reach the podium");
         if (!smoke)
             SDL_Delay(2);
     }
+    return ViewResult::Closed;
+}
+
+MenuResult choose(Menus& menus, const std::filesystem::path& audio) {
+    SDL_Window* windowRaw{};
+    SDL_Renderer* rendererRaw{};
+    check(SDL_CreateWindowAndRenderer("LegoBlast", 3 * ScreenArt::Width, 3 * ScreenArt::Height,
+                                     SDL_WINDOW_RESIZABLE, &windowRaw, &rendererRaw));
+    Handle<SDL_Window, SDL_DestroyWindow> window(windowRaw, SDL_DestroyWindow);
+    Handle<SDL_Renderer, SDL_DestroyRenderer> renderer(rendererRaw, SDL_DestroyRenderer);
+    check(SDL_SetRenderLogicalPresentation(renderer.get(), ScreenArt::Width, ScreenArt::Height,
+                                          SDL_LOGICAL_PRESENTATION_INTEGER_SCALE));
+    check(SDL_SetWindowMinimumSize(window.get(), ScreenArt::Width, ScreenArt::Height));
+    auto screen = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, ScreenArt::Width, ScreenArt::Height);
+    SoundOutput soundtrack(audio, 9, false);
+    Gamepads pads;
+    Controls previous{};
+    unsigned tick = 0;
+    auto nextTick = SDL_GetTicks();
+    while (true) {
+        SDL_Event event{};
+        while (SDL_PollEvent(&event)) {
+            pads.update(event);
+            if (event.type == SDL_EVENT_QUIT)
+                return MenuResult::Exit;
+            if (event.type != SDL_EVENT_KEY_DOWN)
+                continue;
+            auto result = MenuResult::Continue;
+            switch (event.key.key) {
+            case SDLK_UP: result = menus.handle(MenuInput::Up); break;
+            case SDLK_DOWN: result = menus.handle(MenuInput::Down); break;
+            case SDLK_LEFT: result = menus.handle(MenuInput::Left); break;
+            case SDLK_RIGHT: result = menus.handle(MenuInput::Right); break;
+            case SDLK_ESCAPE: result = menus.handle(MenuInput::Back); break;
+            case SDLK_RETURN:
+            case SDLK_KP_ENTER:
+            case SDLK_RALT:
+                if (!event.key.repeat)
+                    result = menus.handle(MenuInput::Fire);
+                break;
+            default: break;
+            }
+            if (result != MenuResult::Continue)
+                return result;
+        }
+        Controls input{};
+        pads.read(input);
+        for (std::size_t i = 0; i < 4; ++i) {
+            for (const auto& [button, action] : std::array{
+                    std::pair{&Buttons::up, MenuInput::Up}, std::pair{&Buttons::down, MenuInput::Down},
+                    std::pair{&Buttons::left, MenuInput::Left}, std::pair{&Buttons::right, MenuInput::Right},
+                    std::pair{&Buttons::fire, MenuInput::Fire}}) {
+                if (input[i].*button && !(previous[i].*button)) {
+                    const auto result = menus.handle(action);
+                    if (result != MenuResult::Continue)
+                        return result;
+                }
+            }
+        }
+        previous = input;
+        const auto now = SDL_GetTicks();
+        if (now >= nextTick) {
+            nextTick = now + 20;
+            const auto picture = menus.render(++tick);
+            soundtrack.tick({}, false, false);
+            check(SDL_UpdateTexture(screen.get(), nullptr, picture.data(), ScreenArt::Width * 3));
+            check(SDL_RenderClear(renderer.get()));
+            check(SDL_RenderTexture(renderer.get(), screen.get(), nullptr, nullptr));
+            check(SDL_RenderPresent(renderer.get()));
+        }
+        SDL_Delay(2);
+    }
+}
+
+int launch(const std::filesystem::path& root, const std::filesystem::path& sprites,
+           const std::filesystem::path& level, bool smoke, MatchOptions options, unsigned track, bool useMenu) {
+    if (!useMenu) {
+        const auto arenas = options.arena == ArenaMode::Sequential || options.arena == ArenaMode::Random ?
+            loadArenaList(root / "binary") : std::vector<ArenaEntry>{};
+        view(root, sprites, level, smoke, options, track, arenas);
+        return 0;
+    }
+    check(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD));
+    auto arenas = loadArenaList(root / "binary");
+    Menus menus(sprites.parent_path(), arenas);
+    const auto audio = root / "audio";
+    while (choose(menus, std::filesystem::is_directory(audio) ? audio : LEGOBLAST_AUDIO_PATH) == MenuResult::Start)
+        if (view(root, sprites, menus.levelFile(), false, menus.options(), track, arenas, true) == ViewResult::Closed)
+            break;
     return 0;
 }
 }
@@ -296,6 +437,7 @@ int main(int argc, char* argv[]) {
     try {
         MatchOptions options;
         bool smoke = false;
+        bool useMenu = argc == 1;
         unsigned track = 1;
         std::vector<std::string_view> paths;
         for (int i = 1; i < argc; ++i) {
@@ -307,6 +449,7 @@ int main(int argc, char* argv[]) {
             else if (arg == "--random") options.arena = ArenaMode::Random;
             else if (arg == "--dyna") options.arena = ArenaMode::Dynablaster;
             else if (arg == "--smoke") smoke = true;
+            else if (arg == "--menu") useMenu = true;
             else if (arg.starts_with("--music=")) {
                 const auto value = arg.substr(8);
                 if (value.size() != 1 || value[0] < '0' || value[0] > '4')
@@ -325,13 +468,14 @@ int main(int argc, char* argv[]) {
             if (!base)
                 throw std::runtime_error(SDL_GetError());
             const std::filesystem::path root = std::filesystem::path(reinterpret_cast<const char8_t*>(base)) / "data";
-            return view(root, root / "binary/LEGO_SPRITES.DAT",
-                        root / "binary" / ("Lego_Level" + std::string(number) + ".dat"), smoke, options, track);
+            return launch(root, root / "binary/LEGO_SPRITES.DAT",
+                          root / "binary" / ("Lego_Level" + std::string(number) + ".dat"),
+                          smoke, options, track, useMenu && !smoke);
         }
         if (paths.size() != 3)
             throw std::runtime_error("usage: legoblast_players [LEVEL | AMIGA_SRC SPRITES LEVEL.dat] "
                                      "[--free] [--teams | --survivor] [--sequential | --random | --dyna]");
-        return view(paths[0], paths[1], paths[2], smoke, options, track);
+        return launch(paths[0], paths[1], paths[2], smoke, options, track, useMenu && !smoke);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

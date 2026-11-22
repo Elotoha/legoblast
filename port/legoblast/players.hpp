@@ -45,6 +45,7 @@ struct Player {
     int recentCell{}, earlierCell{};
     int bumperCell{};
     int roundsPlayed{};
+    unsigned bombsPlanted{}, bonusesTaken{};
     int control{-1};
     Activation activation{Activation::Hidden};
     bool forceCenter{true}, autoFire{}, previousFire{}, fire{}, canPush{}, push{}, canBeBumped{};

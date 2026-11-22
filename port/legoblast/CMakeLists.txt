@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 project(legoblast_source_port LANGUAGES CXX)
 
-add_library(legoblast_source level.cpp players.cpp sprite.cpp bombs.cpp session.cpp hud.cpp)
+add_library(legoblast_source level.cpp players.cpp sprite.cpp bombs.cpp session.cpp hud.cpp screens.cpp)
 target_compile_features(legoblast_source PUBLIC cxx_std_20)
 target_include_directories(legoblast_source PUBLIC .)
 add_executable(legoblast_levels main.cpp)
