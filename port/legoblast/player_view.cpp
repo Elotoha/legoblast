@@ -1,4 +1,5 @@
 #include "players.hpp"
+#include "sprite.hpp"
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -15,52 +16,12 @@ namespace {
 template<class T, void (*Destroy)(T*)>
 using Handle = std::unique_ptr<T, decltype(Destroy)>;
 using Texture = Handle<SDL_Texture, SDL_DestroyTexture>;
-constexpr int SpriteWidth = 16;
-constexpr int SpriteHeight = 24;
 constexpr int BoardWidth = Width * TileSize;
 constexpr int BoardHeight = Height * TileSize;
 
 void check(bool success) {
     if (!success)
         throw std::runtime_error(SDL_GetError());
-}
-
-unsigned readBig(std::span<const std::uint8_t> bytes, std::size_t offset, unsigned width) {
-    if (offset > bytes.size() || width > bytes.size() - offset)
-        throw std::runtime_error("original sprite bank or index is truncated");
-    unsigned value = 0;
-    for (unsigned i = 0; i < width; ++i)
-        value = value << 8 | bytes[offset + i];
-    return value;
-}
-
-// CalcMot selects two attached two-plane sprites through AdrIndex.
-Bytes attachedSprite(const Bytes& sprites, const Bytes& indices, const Bytes& palette, int frame) {
-    const auto index = static_cast<std::size_t>(frame) * 8;
-    const auto lower = readBig(indices, index, 4);
-    const auto upper = readBig(indices, index + 4, 4);
-    Bytes rgba(SpriteWidth * SpriteHeight * 4);
-    for (int y = 0; y < SpriteHeight; ++y) {
-        const unsigned line = 4 + y * 4; // skip SPRxPOS and SPRxCTL.
-        const std::array<unsigned, 4> planes{
-            readBig(sprites, std::size_t(lower) + line, 2), readBig(sprites, std::size_t(lower) + line + 2, 2),
-            readBig(sprites, std::size_t(upper) + line, 2), readBig(sprites, std::size_t(upper) + line + 2, 2),
-        };
-        for (int x = 0; x < SpriteWidth; ++x) {
-            unsigned color = 0;
-            for (unsigned plane = 0; plane < planes.size(); ++plane)
-                color |= ((planes[plane] >> (15 - x)) & 1) << plane;
-            if (color) {
-                const auto rgb = readBig(palette, color * 4, 4);
-                const auto at = (y * SpriteWidth + x) * 4;
-                rgba[at] = (rgb >> 16) & 255;
-                rgba[at + 1] = (rgb >> 8) & 255;
-                rgba[at + 2] = rgb & 255;
-                rgba[at + 3] = 255;
-            }
-        }
-    }
-    return rgba;
 }
 
 Controls keyboard() {
@@ -129,8 +90,9 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
         for (; elapsed >= 20; elapsed -= 20) {
             auto input = keyboard();
             if (smoke) {
-                auto& player = input[static_cast<std::size_t>(Control::Keyboard1)];
-                player.fire = tick.autoCounter == 0;
+                input = {};
+                input[static_cast<std::size_t>(Control::Joy0)].fire = tick.autoCounter == 0;
+                input[static_cast<std::size_t>(Control::Joy1)].fire = tick.autoCounter == 0;
             }
             ++tick.autoCounter;
             players.tick(input, tick, map);
@@ -148,8 +110,9 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
         }
         check(SDL_RenderPresent(renderer.get()));
         if (smoke && tick.autoCounter == 31) {
-            if (players.slots()[0].activation != Activation::Ready || players.slots()[0].frame != 33)
-                throw std::runtime_error("appearance smoke test failed");
+            for (int i = 0; i < 2; ++i)
+                if (players.slots()[i].activation != Activation::Ready || players.slots()[i].frame != 33)
+                    throw std::runtime_error("appearance smoke test failed");
             break;
         }
         if (!smoke)
@@ -162,8 +125,16 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
 int main(int argc, char* argv[]) {
     struct Quit { ~Quit() { SDL_Quit(); } } quit;
     try {
+        if (argc == 1 || (argc == 2 && std::string_view(argv[1]) == "--smoke")) {
+            const char* base = SDL_GetBasePath();
+            if (!base)
+                throw std::runtime_error(SDL_GetError());
+            const std::filesystem::path root = std::filesystem::u8path(base) / "data";
+            return view(root, root / "binary/LEGO_SPRITES.DAT",
+                        root / "binary/Lego_Level021.dat", argc == 2);
+        }
         if (argc != 4 && (argc != 5 || std::string_view(argv[4]) != "--smoke"))
-            throw std::runtime_error("usage: legoblast_players AMIGA_SRC LEGO_SPRITES.DAT LEVEL.dat [--smoke]");
+            throw std::runtime_error("usage: legoblast_players [AMIGA_SRC LEGO_SPRITES.DAT LEVEL.dat] [--smoke]");
         return view(argv[1], argv[2], argv[3], argc == 5);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

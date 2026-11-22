@@ -1,5 +1,7 @@
 #include "level.hpp"
+#include "sprite.hpp"
 
+#include <algorithm>
 #include <iostream>
 #include <stdexcept>
 
@@ -20,6 +22,19 @@ int main(int argc, char** argv) {
               level.starts[0].x == 1 && level.starts[1].x == 17 &&
               level.teleporters.empty(), "original level 001 header");
         check(loadLevel(binary / "Lego_Level002.dat").teleporters.size() == 4, "level 002 teleporters");
+        // The two data words from each attached hardware sprite contribute two bits.
+        Bytes sprites(2 * 104);
+        sprites[4] = 0x40;       // x=1: color 1.
+        sprites[6] = 0x20;       // x=2: color 2.
+        sprites[104 + 4] = 0x10; // x=3: color 4.
+        sprites[104 + 6] = 0x08; // x=4: color 8.
+        const Bytes index{0, 0, 0, 0, 0, 0, 0, 104};
+        const auto colors = attachedSprite(sprites, index, readBytes(binary / "Lego_Sprites.col"), 0);
+        const Bytes firstPixels{0, 0, 0, 0, 160, 144, 0, 255, 176, 160, 0, 255,
+                                240, 224, 0, 255, 0, 0, 240, 255};
+        check(colors.size() == 16 * 24 * 4 &&
+              std::equal(firstPixels.begin(), firstPixels.end(), colors.begin()),
+              "AGA bank 5, bitplane order and transparent color zero");
         int count = 0;
         const auto bank = readBytes(binary / "Lego_Blocs.dat");
         int emptyNames = 0;

@@ -38,3 +38,9 @@ ctest --test-dir /tmp/legoblast-source --output-on-failure
 ```
 
 Avec le clavier 1, **Alt droit** fait apparaître le joueur, les **flèches** le déplacent et **Échap** ferme la fenêtre. Le moteur accepte aussi les entrées des autres contrôleurs via son API. Cette fenêtre sert à vérifier la marche et l’apparition. Elle n’exécute ni les manches, ni les maladies, ni les effets sonores, et utilise le mode graphique à sprites attachés. La parité avec des traces d’exécution sur Amiga reste à vérifier.
+
+### Palette matérielle et test Windows
+
+En mode à quatre sprites attachés, `SUITEO` charge les 32 premières entrées de `Lego_Sprites.col` à partir du registre 64. `SetScreenRegisters` sélectionne la banque 5 avec `BPLCON4 = $0055`. Les quatre plans du sprite adressent les registres 80 à 95. L’indice 0 est transparent et les indices 1 à 15 lisent les entrées 17 à 31 du fichier, en RVB 24 bits. La fenêtre est limitée à ce mode de rendu. Le mode à sprites indépendants utilise `MakeSprPal` et sa propre palette.
+
+Le ZIP Windows x64 est produit par le workflow [Joueurs LegoBlast Windows](https://github.com/Elotoha/legoblast/actions/workflows/legoblast-players-windows.yml). Extraire le ZIP entier, puis ouvrir `legoblast_players.exe`. Le dossier `data` inclut le niveau « Test tuyaux » et la banque de sprites. Appuyer sur **Alt droit** puis utiliser les **flèches**. Pour comparer deux joueurs, lancer une nouvelle fenêtre et utiliser **Espace** et **flèche droite** pour l’apparition des claviers 2 et 3. Ne pas appuyer sur Alt droit dans cette fenêtre, car le clavier 1 exclut les deux autres dans le code d’origine.
