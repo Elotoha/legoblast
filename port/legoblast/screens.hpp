@@ -30,6 +30,15 @@ private:
     Bytes feelings_;
 };
 
+class ReadyPanel {
+public:
+    explicit ReadyPanel(const std::filesystem::path& binary);
+    Bytes render(Bytes board, const Level& level, const Bytes& blocks, const Bytes& palette) const;
+
+private:
+    Bytes titleFont_, textFont_;
+};
+
 struct ArenaEntry {
     std::filesystem::path file;
     Level level;
@@ -48,6 +57,7 @@ public:
     Bytes render(unsigned tick) const;
     const auto& options() const { return options_; }
     const auto& levelFile() const { return arenas_[arena_].file; }
+    bool sharedKeyboard() const { return control_ >= 5; }
 
 private:
     void drawSelection(Bytes& picture, unsigned bob, unsigned offset) const;

@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <bit>
+#include <charconv>
 #include <fstream>
 #include <stdexcept>
+#include <string_view>
 
 namespace legoblast {
 namespace {
@@ -138,7 +140,17 @@ Level decodeLevel(std::span<const std::uint8_t> bytes) {
 
 Level loadLevel(const std::filesystem::path& path) {
     try {
-        return decodeLevel(readBytes(path));
+        auto level = decodeLevel(readBytes(path));
+        const auto stem = path.stem().string();
+        constexpr std::string_view prefix = "Lego_Level";
+        if (stem.starts_with(prefix) && stem.size() == prefix.size() + 3) {
+            unsigned number{};
+            const auto end = stem.data() + stem.size();
+            const auto parsed = std::from_chars(stem.data() + prefix.size(), end, number);
+            if (parsed.ec == std::errc{} && parsed.ptr == end)
+                level.number = number;
+        }
+        return level;
     } catch (const std::runtime_error& error) {
         throw std::runtime_error(path.string() + ": " + error.what());
     }

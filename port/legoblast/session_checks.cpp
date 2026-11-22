@@ -235,6 +235,38 @@ void modes() {
     advance(dyna, 10, confirm);
     check(dyna.arena().tiles != firstTiles, "Dynablaster must generate a new maze");
 }
+
+void arenaShortcuts() {
+    auto first = fixture();
+    first.name = "first";
+    auto second = first;
+    second.name = "second";
+    Session session({first, second}, 0, {});
+    advance(session, 14);
+    check(!session.showReady(), "ready panel opened before VBL 15");
+    advance(session, 1);
+    check(session.showReady(), "ready panel did not open on VBL 15");
+    session.previousArena();
+    check(session.roundNumber() == 1, "previous arena restarted the first arena");
+    join(session);
+    check(!session.showReady(), "ready panel stayed open after the first player joined");
+    advance(session, 350);
+    Controls plant{};
+    plant[0].fire = true;
+    session.tick(plant);
+    result(session);
+    check(session.score()[1] == 1, "fixture did not score");
+    session.nextArena();
+    check(session.arena().name == "second" && session.roundNumber() == 2 &&
+          session.score()[1] == 1 && session.players()[1].control == 1,
+          "next arena lost the score or controllers");
+    session.nextArena();
+    check(session.roundNumber() == 2, "next arena restarted the last arena");
+    session.previousArena();
+    check(session.arena().name == "first" && session.roundNumber() == 3, "previous arena failed");
+    session.replayArena();
+    check(session.arena().name == "first" && session.roundNumber() == 4, "replay changed arenas");
+}
 }
 
 int main() {
@@ -245,6 +277,7 @@ int main() {
         retries();
         contactAndBumpers();
         modes();
+        arenaShortcuts();
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

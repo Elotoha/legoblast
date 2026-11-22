@@ -12,6 +12,30 @@ unsigned bigEndian(const Bytes& bytes, std::size_t offset, unsigned length) {
         result = (result << 8) | bytes.at(offset + i);
     return result;
 }
+
+void printBitmap(Bytes& picture, int stride, const Bytes& font, int x, int y,
+                 std::string_view phrase, unsigned color) {
+    for (unsigned char letter : phrase) {
+        const auto offset = bigEndian(font, letter * 4, 4);
+        const auto width = static_cast<int>(bigEndian(font, offset, 2));
+        const auto height = static_cast<int>(bigEndian(font, offset + 2, 2));
+        for (int row = 0; row < height; ++row) {
+            const auto bits = bigEndian(font, offset + 4 + row * 4, 4);
+            for (int col = 0; col < width && col < 24 && x + col < stride; ++col)
+                if (bits & (0x80000000u >> col))
+                    picture.at((y + row) * stride + x + col) = static_cast<std::uint8_t>(color);
+        }
+        x += width;
+    }
+}
+
+std::string timeLabel(unsigned ticks) {
+    const auto seconds = ticks / 50;
+    if (seconds < 60)
+        return std::to_string(seconds) + " Seconds.";
+    return std::to_string(seconds / 60) + ":" +
+        std::to_string(100 + seconds % 60).substr(1);
+}
 }
 
 ScreenArt::ScreenArt(const std::filesystem::path& image, const std::filesystem::path& palette)
@@ -130,6 +154,56 @@ Bytes PodiumArt::render(const Session& session) const {
     return backdrop_.rgb(image, std::min(session.podiumTime(), 100u), grey);
 }
 
+ReadyPanel::ReadyPanel(const std::filesystem::path& binary)
+    : titleFont_(readBytes(binary / "aachen13.font")),
+      textFont_(readBytes(binary / "tinytxt8.font")) {}
+
+Bytes ReadyPanel::render(Bytes board, const Level& level, const Bytes& blocks, const Bytes& palette) const {
+    constexpr int stride = Width * TileSize;
+    constexpr int boardX = (ScreenArt::Width - stride) / 2;
+    constexpr int left = 60 - boardX, right = 260 - boardX, top = 70, bottom = 180;
+    const auto original = board;
+    std::fill_n(board.begin() + (top - 1) * stride + left - 1, right - left + 3, 15);
+    std::fill_n(board.begin() + (bottom + 1) * stride + left - 1, right - left + 3, 15);
+    for (int y = top; y <= bottom; ++y) {
+        board[y * stride + left - 1] = 15;
+        board[y * stride + right + 1] = 15;
+    }
+    const auto label = [&](const Bytes& font, int x, int y, std::string_view text) {
+        printBitmap(board, stride, font, x - boardX + 2, y + 2, text, 15);
+        printBitmap(board, stride, font, x - boardX, y, text, 30);
+    };
+    label(titleFont_, 130, 82, "READY ?!");
+    std::string name = "Level ";
+    const auto world = level.number / 100;
+    constexpr std::array worlds{"Normal", "Alien", "Antic", "Tronic", "Wood", "Teams"};
+    if (level.number && world < worlds.size()) {
+        label(textFont_, 66, 111, std::string(worlds[world]) + " World");
+        name += std::to_string(100 + level.number % 100).substr(1) + ": ";
+    }
+    label(textFont_, 66, 123, name + level.name);
+    if (level.warningTime < level.totalTime)
+        label(textFont_, 66, 143, "ALERT TIME  " + timeLabel(level.warningTime));
+    label(textFont_, 66, 155, "TOTAL TIME  " + timeLabel(level.totalTime));
+    for (int i = 0; i < 3; ++i)
+        drawLevelPattern(board, 200 - boardX, 120 + i * 16, 16, 22 + i, blocks);
+    label(textFont_, 228, 126, std::to_string(level.reach ? (level.reach - 1) / 2 : 0));
+    label(textFont_, 228, 142, std::to_string(level.bombs));
+    label(textFont_, 228, 158, level.push ? "Yes" : "No");
+
+    // RestoreWorkingScreenEHB clears the seventh plane wherever the drawing
+    // changed the background, leaving the unmodified arena in half-bright.
+    auto rgb = levelRgb(board, palette);
+    for (int y = top; y <= bottom; ++y)
+        for (int x = left; x <= right; ++x) {
+            const auto pixel = y * stride + x;
+            if (board[pixel] == original[pixel])
+                for (int c = 0; c < 3; ++c)
+                    rgb[3 * pixel + c] /= 2;
+        }
+    return rgb;
+}
+
 std::vector<ArenaEntry> loadArenaList(const std::filesystem::path& binary) {
     std::vector<ArenaEntry> arenas;
     for (unsigned world = 0; world < 6; ++world)
@@ -237,18 +311,7 @@ void Menus::drawSelection(Bytes& picture, unsigned bob, unsigned offset) const {
 }
 
 void Menus::print(Bytes& picture, int x, int y, std::string_view phrase, unsigned color) const {
-    for (unsigned char letter : phrase) {
-        const auto offset = bigEndian(font_, letter * 4, 4);
-        const auto width = bigEndian(font_, offset, 2);
-        const auto height = bigEndian(font_, offset + 2, 2);
-        for (unsigned row = 0; row < height; ++row) {
-            const auto bits = bigEndian(font_, offset + 4 + row * 4, 4);
-            for (unsigned col = 0; col < width && col < 24 && x + col < ScreenArt::Width; ++col)
-                if (bits & (0x80000000u >> col))
-                    picture.at((y + row) * ScreenArt::Width + x + col) = static_cast<std::uint8_t>(color);
-        }
-        x += width;
-    }
+    printBitmap(picture, ScreenArt::Width, font_, x, y, phrase, color);
 }
 
 Bytes Menus::render(unsigned tick) const {

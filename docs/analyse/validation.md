@@ -24,7 +24,7 @@ L’assemblage avec `vasm` atteint les inclusions du NDK AmigaOS et s’arrête 
 
 Le scénario automatisé joue cinq manches sur l’arène 001 avec deux joueurs, vérifie la conservation des commandes et du score, puis ouvre le podium. Il a passé les tests sous Linux et avec l’exécutable emballé par GitHub Actions sous Windows x64. Les tests unitaires couvrent aussi les égalités, la spirale de fin de niveau, le chronomètre, l’élimination des absents, les reprises et la transmission des maladies. [Compilation Windows](https://github.com/Elotoha/legoblast/actions/runs/45077967393)
 
-Les deux binaires Amiga ont été relancés séparément sous FS-UAE avec les données et préférences extraites de l’archive. La distribution Aminet a affiché le menu d’options. Le binaire du dépôt a atteint l’écran « Ready?! » de Dynablaster. L’encart de départ observé reste à reproduire dans le port. La comparaison des transitions de match et des états à chaque VBL reste à effectuer.
+Les deux binaires Amiga ont été relancés séparément sous FS-UAE avec les données et préférences extraites de l’archive. La distribution Aminet a affiché le menu d’options. Le binaire du dépôt a atteint l’écran « Ready?! » de Dynablaster. Le port affiche désormais cet encart à partir des banques graphiques et des polices Amiga. La comparaison des transitions de match et des états à chaque VBL reste à effectuer.
 
 Un nouvel essai avec le NDK AmigaOS 3.2 a franchi l’inclusion `exec/types.i`. L’assemblage avec `vasm` et sa compatibilité Devpac s’arrête encore sur des macros telles que `AgaOnly`, `CpuMini` et `LTest`, ainsi que sur la casse d’un chemin de palette dans l’environnement Linux. Aucun exécutable de référence n’a été reconstruit à cette étape. [Source du jeu](../../amiga/src/lego17.asm)
 

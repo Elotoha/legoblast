@@ -31,19 +31,76 @@ void check(bool success) {
         throw std::runtime_error(SDL_GetError());
 }
 
-Controls keyboard() {
-    const auto* keys = SDL_GetKeyboardState(nullptr);
-    Controls input{};
-    input[static_cast<std::size_t>(Control::Keyboard1)] = {
-        keys[SDL_SCANCODE_LEFT], keys[SDL_SCANCODE_RIGHT], keys[SDL_SCANCODE_UP],
-        keys[SDL_SCANCODE_DOWN], keys[SDL_SCANCODE_RALT]};
-    input[static_cast<std::size_t>(Control::Keyboard2)] = {
-        keys[SDL_SCANCODE_W], keys[SDL_SCANCODE_R], keys[SDL_SCANCODE_3] || keys[SDL_SCANCODE_4],
-        keys[SDL_SCANCODE_E], keys[SDL_SCANCODE_SPACE]};
-    input[static_cast<std::size_t>(Control::Keyboard3)] = {
-        keys[SDL_SCANCODE_KP_7], keys[SDL_SCANCODE_KP_9], keys[SDL_SCANCODE_KP_LEFTBRACE],
-        keys[SDL_SCANCODE_KP_8], keys[SDL_SCANCODE_RIGHT]};
-    return input;
+class Keyboard {
+public:
+    void update(const SDL_Event& event) {
+        if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+            held_.fill(false);
+            pressed_.fill(false);
+        }
+        if (event.type != SDL_EVENT_KEY_DOWN && event.type != SDL_EVENT_KEY_UP)
+            return;
+        const auto code = event.key.scancode;
+        if (code <= SDL_SCANCODE_UNKNOWN || code >= SDL_SCANCODE_COUNT)
+            return;
+        held_[code] = event.type == SDL_EVENT_KEY_DOWN;
+        if (held_[code] && !event.key.repeat)
+            pressed_[code] = true;
+    }
+
+    Controls read(const Session& session, bool preferShared) {
+        const auto down = [&](SDL_Scancode key) { return held_[key] || pressed_[key]; };
+        const auto assigned = [&](Control control) {
+            return std::ranges::any_of(session.players(), [control](const Player& player) {
+                return player.control == static_cast<int>(control);
+            });
+        };
+        const bool singleFire = down(SDL_SCANCODE_RALT) || down(SDL_SCANCODE_RETURN);
+        const bool shared = assigned(Control::Keyboard2) || assigned(Control::Keyboard3) ||
+            (!assigned(Control::Keyboard1) && (preferShared || (!singleFire && down(SDL_SCANCODE_SPACE))));
+        Controls input{};
+        input[static_cast<std::size_t>(Control::Keyboard1)] = {
+            down(SDL_SCANCODE_LEFT), down(SDL_SCANCODE_RIGHT), down(SDL_SCANCODE_UP),
+            down(SDL_SCANCODE_DOWN), !shared && singleFire};
+        input[static_cast<std::size_t>(Control::Keyboard2)] = {
+            down(SDL_SCANCODE_W), down(SDL_SCANCODE_R), down(SDL_SCANCODE_3) || down(SDL_SCANCODE_4),
+            down(SDL_SCANCODE_E), shared && down(SDL_SCANCODE_SPACE)};
+        // On the Amiga this keyboard shares the right arrow as Fire. Reserve it
+        // only after choosing shared play so a movement key cannot claim a slot.
+        input[static_cast<std::size_t>(Control::Keyboard3)] = {
+            down(SDL_SCANCODE_KP_7), down(SDL_SCANCODE_KP_9),
+            down(SDL_SCANCODE_KP_5) || down(SDL_SCANCODE_KP_RIGHTBRACE) || down(SDL_SCANCODE_RIGHTBRACKET),
+            down(SDL_SCANCODE_KP_8), shared && down(SDL_SCANCODE_RIGHT)};
+        pressed_.fill(false);
+        return input;
+    }
+
+private:
+    std::array<bool, SDL_SCANCODE_COUNT> held_{}, pressed_{};
+};
+
+void verifyKeyboardMapping(const Session& session) {
+    Keyboard keyboard;
+    SDL_Event key{};
+    key.type = SDL_EVENT_KEY_DOWN;
+    key.key.scancode = SDL_SCANCODE_RIGHT;
+    keyboard.update(key);
+    const auto arrow = keyboard.read(session, false);
+    if (!arrow[static_cast<std::size_t>(Control::Keyboard1)].right ||
+        arrow[static_cast<std::size_t>(Control::Keyboard3)].fire)
+        throw std::runtime_error("right arrow prematurely reserved the shared keyboard");
+    if (!keyboard.read(session, true)[static_cast<std::size_t>(Control::Keyboard3)].fire)
+        throw std::runtime_error("shared keyboard lost the original Fire key");
+    key.type = SDL_EVENT_KEY_UP;
+    keyboard.update(key);
+    key.type = SDL_EVENT_KEY_DOWN;
+    key.key.scancode = SDL_SCANCODE_UP;
+    keyboard.update(key);
+    key.type = SDL_EVENT_KEY_UP;
+    keyboard.update(key);
+    if (!keyboard.read(session, false)[static_cast<std::size_t>(Control::Keyboard1)].up ||
+        keyboard.read(session, false)[static_cast<std::size_t>(Control::Keyboard1)].up)
+        throw std::runtime_error("short arrow press was lost or repeated");
 }
 
 class Gamepads {
@@ -107,27 +164,33 @@ Texture texture(SDL_Renderer* renderer, SDL_PixelFormat format, int width, int h
 
 Session makeSession(const std::filesystem::path& binary, const std::filesystem::path& level,
                     MatchOptions options, const std::vector<ArenaEntry>& arenaList) {
-    if (options.arena == ArenaMode::Fixed)
-        return Session(loadLevel(level), options);
     if (options.arena == ArenaMode::Dynablaster)
         return Session(loadLevel(binary / "Lego_Level999.dat"), options);
     std::vector<Level> levels;
     std::size_t startingIndex = 0;
+    bool found = false;
     for (const auto& entry : arenaList) {
-        if (!entry.enabled || (!options.teams && entry.number >= 500))
+        const bool selected = level.filename() == entry.file.filename();
+        if (!entry.enabled && !(selected && options.arena == ArenaMode::Fixed))
             continue;
-        if (level.filename() == entry.file.filename())
+        if (options.arena != ArenaMode::Fixed && !options.teams && entry.number >= 500)
+            continue;
+        if (selected) {
             startingIndex = levels.size();
-        levels.push_back(entry.level);
+            found = true;
+        }
+        levels.push_back(selected && options.arena == ArenaMode::Fixed ? loadLevel(level) : entry.level);
     }
+    if (!found && options.arena == ArenaMode::Fixed)
+        return Session(loadLevel(level), options);
     if (levels.empty())
         throw std::runtime_error("no enabled arenas in this mode");
     return Session(std::move(levels), startingIndex, options);
 }
 
 ViewResult view(const std::filesystem::path& root, const std::filesystem::path& spriteFile,
-         const std::filesystem::path& levelFile, bool smoke, MatchOptions options, unsigned track,
-         const std::vector<ArenaEntry>& arenaList, bool useMenu = false) {
+         const std::filesystem::path& levelFile, bool smoke, MatchOptions options, unsigned& track,
+         const std::vector<ArenaEntry>& arenaList, bool useMenu = false, bool sharedKeyboard = false) {
     const auto binary = root / "binary";
     auto session = makeSession(binary, levelFile, options, arenaList);
     const auto& level = session.arena();
@@ -149,7 +212,9 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
     const auto independentPalette = readBytes(binary / "Mec8_normal.col");
     const Hud hud(spriteFile.parent_path());
     const PodiumArt podium(spriteFile.parent_path());
+    const ReadyPanel ready(spriteFile.parent_path());
     if (smoke) {
+        verifyKeyboardMapping(session);
         auto arenas = loadArenaList(binary);
         Menus menus(spriteFile.parent_path(), arenas);
         menus.render(15);
@@ -164,8 +229,11 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
 
     check(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD));
     Gamepads pads;
+    Keyboard keyboard;
     const auto audio = root / "audio";
     SoundOutput sound(std::filesystem::is_directory(audio) ? audio : LEGOBLAST_AUDIO_PATH, track, smoke);
+    if (smoke && (!sound.selectTrack(3) || !sound.selectTrack(0) || !sound.selectTrack(track)))
+        throw std::runtime_error("music shortcut could not switch tracks");
     SDL_Window* windowRaw{};
     SDL_Renderer* rendererRaw{};
     check(SDL_CreateWindowAndRenderer("LegoBlast", 3 * ScreenWidth, 3 * ScreenHeight,
@@ -184,28 +252,47 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
 
     auto previous = SDL_GetTicks();
     Uint64 elapsed = 0;
+    Uint64 messageUntil = 0;
+    std::string shortcutMessage;
     bool running = true;
     while (running) {
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
             pads.update(event);
+            keyboard.update(event);
             if (useMenu && event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE)
                 return ViewResult::MainMenu;
             if (event.type == SDL_EVENT_QUIT ||
                 (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE))
                 running = false;
             if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
-                if (event.key.key == SDLK_F5)
-                    session.resetMatch();
-                if (event.key.key == SDLK_P)
-                    session.togglePause();
+                const auto key = event.key.scancode;
+                switch (key) {
+                case SDL_SCANCODE_F1: session.previousArena(); break;
+                case SDL_SCANCODE_F2: session.nextArena(); break;
+                case SDL_SCANCODE_HOME:
+                case SDL_SCANCODE_HELP: session.replayArena(); break;
+                case SDL_SCANCODE_P: session.togglePause(); break;
+                default: break;
+                }
+                if (key >= SDL_SCANCODE_F3 && key <= SDL_SCANCODE_F10 &&
+                    !session.paused() && session.phase() != RoundPhase::Podium &&
+                    session.phase() != RoundPhase::Statistics) {
+                    const unsigned requested = key == SDL_SCANCODE_F10 ? 0 : key - SDL_SCANCODE_F3 + 1;
+                    const bool available = sound.selectTrack(requested);
+                    track = available ? requested : 0;
+                    shortcutMessage = requested == 0 ? "MUSIC OFF" : "MUSIC " + std::to_string(requested);
+                    if (!available)
+                        shortcutMessage += " UNAVAILABLE";
+                    messageUntil = SDL_GetTicks() + 2000;
+                }
             }
         }
         const auto now = SDL_GetTicks();
         elapsed += smoke ? 20 : std::min<Uint64>(now - previous, 100);
         previous = now;
         for (; elapsed >= 20; elapsed -= 20) {
-            auto input = keyboard();
+            auto input = keyboard.read(session, sharedKeyboard);
             pads.read(input);
             if (smoke) {
                 input = {};
@@ -289,7 +376,8 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
         for (const auto& bomb : bombs.bombs())
             if (bomb.active)
                 drawLevelPattern(frame, bomb.cell.x * 8, bomb.cell.y * 8, 16, bomb.image(), bank);
-        const auto rgb = levelRgb(frame, boardPalette);
+        const auto rgb = session.showReady() ? ready.render(std::move(frame), level, bank, boardPalette) :
+            levelRgb(frame, boardPalette);
         check(SDL_UpdateTexture(background.get(), nullptr, rgb.data(), BoardWidth * 3));
         check(SDL_SetRenderDrawColor(renderer.get(), 14, 19, 29, 255));
         check(SDL_RenderClear(renderer.get()));
@@ -305,6 +393,8 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
         if (session.paused()) message = "PAUSE";
         else if (session.phase() == RoundPhase::AwaitingPlayers && session.retrying())
             message = session.survivorMode() ? "SURVIVOR" : "DON'T MOVE";
+        else if (now < messageUntil)
+            message = shortcutMessage;
         if (message.empty()) {
             check(SDL_RenderTexture(renderer.get(), bar.get(), nullptr, &barBox));
         } else {
@@ -416,8 +506,7 @@ MenuResult choose(Menus& menus, const std::filesystem::path& audio) {
 int launch(const std::filesystem::path& root, const std::filesystem::path& sprites,
            const std::filesystem::path& level, bool smoke, MatchOptions options, unsigned track, bool useMenu) {
     if (!useMenu) {
-        const auto arenas = options.arena == ArenaMode::Sequential || options.arena == ArenaMode::Random ?
-            loadArenaList(root / "binary") : std::vector<ArenaEntry>{};
+        const auto arenas = loadArenaList(root / "binary");
         view(root, sprites, level, smoke, options, track, arenas);
         return 0;
     }
@@ -426,7 +515,8 @@ int launch(const std::filesystem::path& root, const std::filesystem::path& sprit
     Menus menus(sprites.parent_path(), arenas);
     const auto audio = root / "audio";
     while (choose(menus, std::filesystem::is_directory(audio) ? audio : LEGOBLAST_AUDIO_PATH) == MenuResult::Start)
-        if (view(root, sprites, menus.levelFile(), false, menus.options(), track, arenas, true) == ViewResult::Closed)
+        if (view(root, sprites, menus.levelFile(), false, menus.options(), track, arenas, true,
+                 menus.sharedKeyboard()) == ViewResult::Closed)
             break;
     return 0;
 }

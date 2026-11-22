@@ -11,26 +11,22 @@
 namespace legoblast {
 struct SoundOutput::Playback {
     std::array<Sound, static_cast<unsigned>(SoundCue::Count)> effects{};
+    std::filesystem::path assetRoot;
+    unsigned currentTrack{};
     Music music{};
-    Mixer mixer;
+    Mixer mixer{4};
     Mixer podiumMixer{4};
     std::unique_ptr<SDL_AudioStream, decltype(&SDL_DestroyAudioStream)> stream{nullptr, SDL_DestroyAudioStream};
     bool smoke;
 
     Playback(const std::filesystem::path& root, unsigned track, bool smokeTest)
-        : mixer(track ? 1 : 4), smoke(smokeTest) {
+        : assetRoot(root), smoke(smokeTest) {
         for (unsigned i = 0; i < effects.size(); ++i) {
             const auto file = "sample-" + std::to_string(100 + i).substr(1) + ".wav";
             effects[i].clip = loadAudioClip(root / file, SF_FORMAT_WAV);
             effects[i].volume = 0.5f;
         }
-        if (track) {
-            const auto file = track == 9 ? "Mod_Menu.flac" : "Mod_Game" + std::to_string(track) + ".flac";
-            music.stems.push_back(loadAudioClip(root / file, SF_FORMAT_FLAC));
-            music.loopEnd = music.stems.front().frames();
-            music.volume = 35.f / 64;
-            mixer.play(music);
-        }
+        select(track);
         if (SDL_InitSubSystem(SDL_INIT_AUDIO)) {
             const SDL_AudioSpec output{SDL_AUDIO_F32, 2, Mixer::Rate};
             stream.reset(SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &output, nullptr, nullptr));
@@ -42,12 +38,37 @@ struct SoundOutput::Playback {
         SDL_Log("LegoBlast audio is unavailable: %s", SDL_GetError());
         stream.reset();
     }
+
+    bool select(unsigned track) {
+        if (track == currentTrack)
+            return true;
+        const auto file = track == 9 ? "Mod_Menu.flac" : "Mod_Game" + std::to_string(track) + ".flac";
+        const bool available = !track || std::filesystem::is_regular_file(assetRoot / file);
+        Music replacement{};
+        if (track && available) {
+            replacement.stems.push_back(loadAudioClip(assetRoot / file, SF_FORMAT_FLAC));
+            replacement.loopEnd = replacement.stems.front().frames();
+            replacement.volume = 35.f / 64;
+        }
+        currentTrack = available ? track : 0;
+        mixer = Mixer(currentTrack ? 1 : 4);
+        music = std::move(replacement);
+        if (currentTrack)
+            mixer.play(music);
+        if (stream)
+            SDL_ClearAudioStream(stream.get());
+        return available;
+    }
 };
 
 SoundOutput::SoundOutput(const std::filesystem::path& root, unsigned track, bool smoke)
     : playback_(std::make_unique<Playback>(root, track, smoke)) {}
 
 SoundOutput::~SoundOutput() = default;
+
+bool SoundOutput::selectTrack(unsigned track) {
+    return playback_->select(track);
+}
 
 void SoundOutput::tick(std::span<const SoundRequest> requests, bool paused, bool results, bool podium) {
     auto& output = *playback_;

@@ -57,6 +57,7 @@ void Session::startRound(RandomState random, bool newRound) {
     closingFrames_.clear();
     nextClosing_ = closingDelay_ = resultDelay_ = appeared_ = 0;
     retrying_ = !newRound;
+    arenasFinished_ = false;
     paused_ = alert_ = entriesClosed_ = false;
     phase_ = RoundPhase::AwaitingPlayers;
 }
@@ -67,7 +68,7 @@ void Session::resetMatch() {
     score_.fill(0);
     roundNumber_ = 0;
     arenaIndex_ = firstArena_;
-    arenasFinished_ = false;
+    previousArena_ = firstArena_;
     startRound({});
 }
 
@@ -75,6 +76,43 @@ void Session::togglePause() {
     if (phase_ == RoundPhase::AwaitingPlayers || phase_ == RoundPhase::Running ||
         phase_ == RoundPhase::Draining)
         paused_ = !paused_;
+}
+
+bool Session::canChangeArena() const {
+    return !paused_ && phase_ != RoundPhase::Podium && phase_ != RoundPhase::Statistics;
+}
+
+void Session::replayArena() {
+    if (canChangeArena())
+        startRound(bombs_.randomState());
+}
+
+void Session::previousArena() {
+    if (!canChangeArena() || options_.arena == ArenaMode::Dynablaster)
+        return;
+    if (options_.arena == ArenaMode::Random) {
+        if (previousArena_ == arenaIndex_)
+            return;
+        arenaIndex_ = previousArena_;
+    } else {
+        if (!arenaIndex_)
+            return;
+        --arenaIndex_;
+    }
+    replayArena();
+}
+
+void Session::nextArena() {
+    if (!canChangeArena() || options_.arena == ArenaMode::Dynablaster)
+        return;
+    if (options_.arena == ArenaMode::Random) {
+        auto random = bombs_.randomState();
+        drawRandomArena(random);
+        startRound(random);
+    } else if (arenaIndex_ + 1 < arenas_.size()) {
+        ++arenaIndex_;
+        replayArena();
+    }
 }
 
 void Session::closeEntries() {
@@ -208,8 +246,13 @@ void Session::advanceArena() {
     if (options_.arena == ArenaMode::Sequential)
         ++arenaIndex_;
     if (options_.arena == ArenaMode::Random)
-        arenaIndex_ = (random.next() & 0xfff) % arenas_.size();
+        drawRandomArena(random);
     startRound(random);
+}
+
+void Session::drawRandomArena(RandomState& random) {
+    previousArena_ = arenaIndex_;
+    arenaIndex_ = (random.next() & 0xfff) % arenas_.size();
 }
 
 void Session::endRound() {

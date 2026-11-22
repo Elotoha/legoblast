@@ -37,17 +37,32 @@ ctest --test-dir /tmp/legoblast-source --output-on-failure
 /tmp/legoblast-source/legoblast_players amiga/src /chemin/LEGO_SPRITES.DAT amiga/src/binary/Lego_Level001.dat
 ```
 
-Avec le clavier 1, **Alt droit** fait apparaître le joueur, les **flèches** le déplacent et **Échap** ferme la fenêtre. Le moteur accepte aussi les entrées des autres contrôleurs via son API.
+Avec le clavier simple, **Alt droit** ou **Entrée** fait apparaître le joueur et sert de touche Feu. Les **flèches** le déplacent.
 
 ### Palette matérielle et test Windows
 
 En mode à quatre sprites attachés, `SUITEO` charge les 32 premières entrées de `Lego_Sprites.col` à partir du registre 64. `SetScreenRegisters` sélectionne la banque 5 avec `BPLCON4 = $0055`. Les quatre plans du sprite adressent les registres 80 à 95. L’indice 0 est transparent et les indices 1 à 15 lisent les entrées 17 à 31 du fichier, en RVB 24 bits. À partir de cinq commandes attribuées, le rendu utilise les sprites indépendants et les quatre entrées par joueur de `Mec8_normal.col`. La banque indépendante fournie compte 199 images par joueur. Les animations de résultat à partir de l’image 190 existent dans la banque attachée récente. Le rendu indépendant y revient à la pose de repos.
 
-Le ZIP Windows x64 est produit par le workflow [Joueurs LegoBlast Windows](https://github.com/Elotoha/legoblast/actions/workflows/legoblast-players-windows.yml). Extraire le ZIP entier, puis ouvrir `legoblast_players.exe`. Le menu s'ouvre au démarrage. Sélectionner **Start** avec **Entrée** pour jouer le niveau 001, ou **Options** pour configurer l'arène et le type de match. La commande `legoblast_players.exe 021` ouvre « Test tuyaux ». Appuyer sur **Alt droit** puis utiliser les **flèches**. Pour comparer deux joueurs, lancer une nouvelle fenêtre et utiliser **Espace** et **flèche droite** pour l’apparition des claviers 2 et 3. Ne pas appuyer sur Alt droit dans cette fenêtre, car le clavier 1 exclut les deux autres dans le code d’origine.
+Le ZIP Windows x64 est produit par le workflow [Joueurs LegoBlast Windows](https://github.com/Elotoha/legoblast/actions/workflows/legoblast-players-windows.yml). Extraire le ZIP entier, puis ouvrir `legoblast_players.exe`. Le menu s'ouvre au démarrage. Sélectionner **Start** avec **Entrée** pour jouer le niveau 001, ou **Options** pour configurer l'arène et le type de match. La commande `legoblast_players.exe 021` ouvre « Test tuyaux ».
+
+### Commandes en partie
+
+| Commande | Action |
+| --- | --- |
+| **F1**, **F2** | Arène précédente ou suivante. En aléatoire, F2 effectue un tirage et F1 revient à l’arène précédente. |
+| **F3** à **F6** | Pistes de jeu 1 à 4. F5 sélectionne la piste 3. |
+| **F7** à **F9** | Pistes 5 à 7. Les modules correspondants sont absents des ressources disponibles, ce qui coupe la musique et affiche un message. |
+| **F10** | Coupe la musique. |
+| **Début** ou **Aide** | Rejoue l’arène. En Dynablaster, génère un nouveau labyrinthe. |
+| **P**, **Échap** | Pause ou retour au menu. En lancement direct, Échap ferme le jeu. |
+
+Les changements d’arène conservent les victoires et les commandes attribuées. En mode séquentiel, les raccourcis avancent ou reculent d’une arène activée.
+
+Pour jouer à deux au clavier, appuyer d’abord sur **Espace**, puis sur **flèche droite**. On peut aussi choisir un clavier B dans les options pour autoriser les deux touches Feu dès le début. Le clavier 2 se déplace avec **Z** en AZERTY (**W** en QWERTY), **R**, **3** ou **4** vers le haut et **E** vers le bas. Le clavier 3 utilise **7**, **9**, **5** vers le haut et **8** vers le bas au pavé numérique. Le choix du clavier simple exclut les deux claviers partagés pour le match.
 
 ## Tester les bombes
 
-Après l’apparition, relâcher **Alt droit**, puis appuyer de nouveau pour poser une bombe. Les flèches permettent de s’éloigner. **F5** recharge le niveau, **Échap** ferme la fenêtre. Avec les claviers 2 et 3, leurs touches Feu respectives (**Espace** et **flèche droite**) posent également des bombes après l’apparition.
+Après l’apparition, relâcher Feu, puis appuyer de nouveau pour poser une bombe. La même commande s’applique aux claviers et aux manettes.
 
 La pose reprend `PoseBombe` et `NewBomb`. Elle échantillonne le Feu avant le déplacement, aligne la bombe sur une tuile entière et vérifie ses quatre sous-cellules. Le compte à rebours et les images de bombe avancent une VBL sur deux. Les flammes avancent à chaque VBL et déclenchent les autres bombes au prochain passage de `Bombes`. Les destructibles ont un état intermédiaire avant de libérer la case. L’aperçu compose les bombes, les blocs en destruction et les flammes à partir des plans et des palettes Amiga.
 
@@ -59,7 +74,7 @@ Les collisions de poussée de base et l’animation d’élimination par les fla
 
 Les bombes poussées testent les deux sous-cellules de l’avant. Elles se téléportent lorsqu’elles s’alignent sur une entrée et que les quatre sous-cellules de sortie sont libres. Elles gardent leur vitesse à la sortie. Le bonus de rebond s’applique aux nouvelles bombes pendant sa durée. Une bombe qui a déjà avancé inverse sa vitesse lorsqu’elle heurte un bloc.
 
-Les flammes font jouer l’animation de destruction d’un bonus visible. La destruction d’un mur révèle son bonus caché, s’il en contenait un. Les effets à la prise sont branchés sur les 23 identifiants de la table Amiga. Ils comprennent les changements de capacité, de portée, de vitesse et de mèche, les commandes inversées, le gel, l’horloge, le rebond, l’invincibilité et l’ambulance. Les temporisations reprennent l’ordre de `TestMalad`. Les effets sonores, la barre d’état et la transmission par contact restent à intégrer. En cas de choc simultané contre deux bombes différentes, le C++ traite les deux cibles par identifiant. Cette situation et le reste du comportement n’ont pas encore été comparés à des traces Amiga.
+Les flammes font jouer l’animation de destruction d’un bonus visible. La destruction d’un mur révèle son bonus caché, s’il en contenait un. Les effets à la prise sont branchés sur les 23 identifiants de la table Amiga. Ils comprennent les changements de capacité, de portée, de vitesse et de mèche, les commandes inversées, le gel, l’horloge, le rebond, l’invincibilité et l’ambulance. Les temporisations reprennent l’ordre de `TestMalad`. En cas de choc simultané contre deux bombes différentes, le C++ traite les deux cibles par identifiant. Cette situation et le reste du comportement n’ont pas encore été comparés à des traces Amiga.
 
 Pour lancer le niveau original **Bump Alert** depuis le ZIP Windows, ouvrir un terminal dans le dossier extrait et exécuter `legoblast_players.exe 314`. Ce niveau contient des téléporteurs, autorise la poussée et peut révéler le bonus de rebond sous les murs.
 
@@ -68,7 +83,7 @@ Pour lancer le niveau original **Bump Alert** depuis le ZIP Windows, ouvrir un t
 
 Le premier joueur à apparaître lance le compte à rebours. La première élimination ou l'alerte à dix secondes ferme les inscriptions. Le terrain se referme en spirale lorsque le délai d'alerte expire. Quand le temps total s'écoule, les bombes actives sont déclenchées. La manche attend la fin des bombes, des flammes et des animations avant d'afficher le résultat. Une victoire rapporte un point lorsqu'au moins deux joueurs ont participé.
 
-Feu passe à la manche suivante après le résultat et fait apparaître le joueur avec son périphérique précédent. Pour essayer à deux sur le même clavier, utiliser **W**, **R**, **3** ou **4**, **E** et **Espace** pour le clavier 2, puis **7**, **9**, **{** et **8** sur le pavé numérique et **flèche droite** pour le clavier 3. **P** met le jeu en pause. **F5** recommence le match.
+L’encart « Ready?! » apparaît après 15 VBL et présente le niveau, les temps et les bonus de départ avec les polices et les graphismes Amiga. Feu passe à la manche suivante après le résultat. Le joueur conserve le périphérique qui lui a été attribué.
 
 Le moteur avance par pas de 20 ms. `legoblast_session_checks` vérifie cinq victoires consécutives, le match nul, la conservation des commandes, la pause, le départ différé du chronomètre, le premier bloc de la spirale et la résolution du temps écoulé avec une bombe active. Le workflow Windows lance également l'exécutable emballé avec `--smoke` et vérifie le menu, cinq victoires au niveau 001 et l'ouverture du podium.
 

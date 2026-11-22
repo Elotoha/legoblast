@@ -24,6 +24,9 @@ public:
     void tick(const Controls& input);
     void resetMatch();
     void togglePause();
+    void previousArena();
+    void nextArena();
+    void replayArena();
 
     const auto& players() const { return players_.slots(); }
     const auto& bumpers() const { return players_.bumpers(); }
@@ -43,6 +46,7 @@ public:
     bool fiveWinMatch() const { return options_.fiveWins; }
     bool survivorMode() const { return options_.survivor; }
     bool retrying() const { return retrying_; }
+    bool showReady() const { return phase_ == RoundPhase::AwaitingPlayers && timing_.levelInfoState == -1; }
     const Level& arena() const { return level_; }
     std::size_t arenaIndex() const { return arenaIndex_; }
     bool arenasFinished() const { return arenasFinished_; }
@@ -54,11 +58,13 @@ private:
     void tickClosing();
     void endRound();
     void advanceArena();
+    void drawRandomArena(RandomState& random);
+    bool canChangeArena() const;
     void closeEntries();
     static std::vector<Point> fillOrder(const Level& level);
 
     std::vector<Level> arenas_;
-    std::size_t firstArena_{}, arenaIndex_{};
+    std::size_t firstArena_{}, arenaIndex_{}, previousArena_{};
     Level level_;
     MatchOptions options_;
     PlayerMap map_;

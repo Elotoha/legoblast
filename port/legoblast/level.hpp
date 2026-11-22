@@ -33,6 +33,7 @@ struct Level {
     std::array<std::uint16_t, 30> bonusWeights;
     std::array<std::uint8_t, Width * Height> tiles;
     std::vector<Teleporter> teleporters;
+    unsigned number{};
 };
 struct RandomState {
     std::uint32_t d0, d1;
