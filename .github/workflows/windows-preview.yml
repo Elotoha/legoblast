@@ -1,0 +1,44 @@
+name: Aperçu Windows
+
+on:
+  push:
+    paths:
+      - 'port/**'
+      - 'amiga/src/LEGO_WORLDS/lego2*.png'
+      - '.github/workflows/windows-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-preview:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            port
+            amiga/src/LEGO_WORLDS/lego2.png
+            amiga/src/LEGO_WORLDS/lego2_pixelart.png
+          sparse-checkout-cone-mode: false
+      - name: Compiler et vérifier le paquet
+        shell: powershell
+        run: .\port\windows\Test-LegoBlast.ps1 -BuildOnly
+      - name: Tester le lancement SDL
+        shell: powershell
+        run: |
+          $env:SDL_VIDEODRIVER = 'dummy'
+          $env:SDL_AUDIODRIVER = 'dummy'
+          $env:SDL_RENDER_DRIVER = 'software'
+          & .\port\out\windows\Release\asset_preview.exe .\port\out\windows\Release\demo-assets --frames 4
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LegoBlast-Apercu-Windows-x64
+          path: |
+            port/out/windows/Release/asset_preview.exe
+            port/out/windows/Release/*.dll
+            port/out/windows/Release/Ouvrir-Apercu.cmd
+            port/out/windows/Release/demo-assets/
+          if-no-files-found: error
