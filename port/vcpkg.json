@@ -1,0 +1,5 @@
+{
+  "name": "legoblast-asset-preview",
+  "version-string": "0.1.0",
+  "dependencies": ["sdl3", "libpng", "libsndfile", "nlohmann-json"]
+}

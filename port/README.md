@@ -101,3 +101,21 @@ Pour une planche utilisée seule, ajouter par exemple `--grid 6 2` pour six colo
 - Les sources `wav`, `flac` et `8svx` passent par FFmpeg. Pour du PCM brut signé 8 bits, utiliser `pcm-s8` et préciser `rate` et `channels`. Les bruitages sortent en WAV PCM 16 bits. La musique est empaquetée en FLAC.
 - Pour les modules P6/P61, produire en amont un rendu WAV ou FLAC depuis un lecteur de référence. Si les canaux doivent rester indépendants, exporter une piste par canal à cadence et durée égales. `loop` est un intervalle `[début, fin)` en échantillons par canal du fichier source. Sans intervalle, l’intégralité de la piste boucle.
 - Le mixeur travaille à 48 kHz. Il conserve la phase d’une piste momentanément coupée. Lorsqu’il manque une voix de bruitage, la priorité décide et la voix la plus ancienne cède parmi celles de même priorité. Cette politique sert à l’aperçu. Son équivalence avec l’arbitrage Amiga reste à établir.
+
+## Tester sous Windows x64
+
+**Version précompilée.** Sur GitHub, ouvrir l’onglet Actions, choisir une exécution réussie d’« Aperçu Windows », puis télécharger l’artefact `LegoBlast-Apercu-Windows-x64`. Extraire le ZIP et double-cliquer sur `Ouvrir-Apercu.cmd`. La flèche droite alterne les deux versions du visuel de démonstration. Redimensionner la fenêtre ou la maximiser pour les comparer à plus grande taille.
+
+**Depuis le dépôt.** Installer Visual Studio 2022 ou ses Build Tools avec la charge « Développement Desktop en C++ », ainsi que CMake 3.24+ et Git. Depuis l’Explorateur ou le terminal, lancer `port\windows\Test-LegoBlast.cmd`. Le script réutilise `VCPKG_ROOT` si défini, ou prépare vcpkg dans `port\out`. Il construit l’aperçu, vérifie le paquet de démonstration et le lance. L’option `-BuildOnly` prépare les fichiers dans `port\out\windows\Release` sans ouvrir la fenêtre.
+
+Le paquet de démonstration ouvre un comparateur de graphismes. Le moteur du jeu reste à implémenter.
+
+## Comparer les graphismes Amiga convertis
+
+Chaque source traitée garde son fichier d’origine et reçoit deux variantes de dimensions quadruples dans le même dossier. `nom.png` est la version Lanczos et `nom_pixelart.png` la version pixel art. Lorsqu’un nom de base entre en collision, le script ajoute l’extension source au nom d’export. Les PNG issus d’animations sont des APNG.
+
+```sh
+python3 port/tools/export_graphics.py
+```
+
+Le script exige FFmpeg et ffprobe sur le PATH. Il traite les IFF ILBM, les JPEG et les IFF ANIM suivis dans `amiga/src`. Les RAW et CRP dépourvus de description intégrée nécessitent une géométrie, un agencement et une palette vérifiés avant conversion.
