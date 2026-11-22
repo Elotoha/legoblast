@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - 'port/legoblast/**'
+      - 'port/src/audio*'
+      - 'port/src/assets.hpp'
       - '.github/workflows/legoblast-players-windows.yml'
   workflow_dispatch:
 
@@ -19,6 +21,9 @@ jobs:
           sparse-checkout-cone-mode: false
           sparse-checkout: |
             /port/legoblast/
+            /port/src/audio*.cpp
+            /port/src/audio*.hpp
+            /port/src/assets.hpp
             /amiga/release_aminet/LegoBlast.lha
             /amiga/src/LEGO_WORLDS/*.col
             /amiga/src/binary/Lego_Level*.dat
@@ -54,11 +59,14 @@ jobs:
           Copy-Item amiga/src/binary/Lego_Sprites8.dat, amiga/src/binary/Lego_SpritesIndex8.dat, amiga/src/binary/Mec8_normal.col package/data/binary/
           Copy-Item amiga/src/LEGO_WORLDS/*.col package/data/LEGO_WORLDS/
           Copy-Item build/amiga-release/binary/LEGO_SPRITES.DAT package/data/binary/
+          Copy-Item build/amiga-release/binary/barreJ*.raw, build/amiga-release/binary/bigbloc.dat, build/amiga-release/binary/timer1.dat, build/amiga-release/binary/Jauge.Dat, build/amiga-release/binary/JaugeTeams.Dat, build/amiga-release/binary/bois.raw package/data/binary/
+          Copy-Item port/legoblast/audio package/data/audio -Recurse
       - name: Vérifier le lancement de l’exécutable emballé
         shell: pwsh
         run: |
           $env:SDL_VIDEODRIVER = 'dummy'
           $env:SDL_RENDER_DRIVER = 'software'
+          $env:SDL_AUDIODRIVER = 'dummy'
           & .\package\legoblast_players.exe --smoke
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4

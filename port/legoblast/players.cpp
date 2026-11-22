@@ -281,7 +281,7 @@ void Players::prepare(const Level& level, bool newLevel, bool dynaLevel) {
     }
 }
 
-void Players::tickBumpers(PlayerMap& map) {
+void Players::tickBumpers(PlayerMap& map, std::vector<SoundRequest>& sounds) {
     const auto& visible = std::as_const(map);
     for (auto& bumper : bumpers_) {
         if (visible.at(bumper.cell.x, bumper.cell.y).visible != BumperTile)
@@ -306,6 +306,7 @@ void Players::tickBumpers(PlayerMap& map) {
                 bumper.state = 1;
         } else {
             if (bumper.frame == BumperHit) {
+                sounds.push_back({SoundCue::Bumper, -9});
                 for (const auto index : {first, second})
                     if (index >= 0)
                         map.bombVelocities.at(index) = bumper.direction;
@@ -353,6 +354,41 @@ void Players::eliminateAbsent() {
         }
 }
 
+void Players::startResult(bool victory, unsigned& animationIndex) {
+    constexpr std::array winners{214, 220};
+    constexpr std::array ties{170, 178, 190, 202};
+    const auto survivors = std::ranges::count_if(players_, [](const auto& player) {
+        return player.activation != Activation::Hidden && !player.dead;
+    });
+    for (auto& player : players_) {
+        player.visible = player.activation != Activation::Hidden && !player.dead;
+        if (!player.visible)
+            continue;
+        player.imageOffset = 0;
+        if (victory)
+            player.frame = winners[animationIndex++ % winners.size()];
+        else
+            player.frame = survivors < 2 ? ties.front() : ties[animationIndex++ % ties.size()];
+    }
+}
+
+void Players::tickResult() {
+    for (auto& player : players_) {
+        if (!player.visible || ++player.animationTicks < 5)
+            continue;
+        player.animationTicks = 0;
+        switch (player.frame) {
+        case 176: player.frame = 173; break;
+        case 188: player.frame = 186; break;
+        case 200: player.frame = 197; break;
+        case 212: player.frame = 209; break;
+        case 218:
+        case 224: break;
+        default: ++player.frame; break;
+        }
+    }
+}
+
 void Players::show(Player& player, PlayerTick& timing) {
     ++player.roundsPlayed;
     if (!someoneAppeared_ && !timing.levelTimerRunning) {
@@ -362,6 +398,7 @@ void Players::show(Player& player, PlayerTick& timing) {
     someoneAppeared_ = true;
     player.activation = Activation::AwaitRelease;
     player.visible = true;
+    timing.sounds.push_back({SoundCue::Teleport, 5});
 }
 
 namespace {
@@ -425,7 +462,7 @@ void transferOnContact(std::array<Player, PlayerCount>& players) {
 }
 
 // TestMalad processes M1 through M9 and defers subsequent timers if one expires.
-void tickEffects(Player& player) {
+bool tickEffects(Player& player) {
     for (std::size_t i = 0; i < player.effects.size(); ++i) {
         auto& time = player.effects[i];
         if (!time || --time > 0)
@@ -441,8 +478,9 @@ void tickEffects(Player& player) {
         case 6: player.imageOffset = 0; break;
         default: break;
         }
-        break;
+        return true;
     }
+    return false;
 }
 }
 
@@ -450,6 +488,10 @@ void tickEffects(Player& player) {
 void Players::applyBonus(Player& player, unsigned number, PlayerTick& timing, BombField& bombs, PlayerMap& map) {
     constexpr int longTime = DiseaseTime, shortTime = 750;
     auto& effects = player.effects;
+    if (number) {
+        player.lastBonus = number;
+        timing.sounds.push_back({number == 10 ? SoundCue::Nuclear : SoundCue::Bonus, number == 10 ? 1 : -7});
+    }
     switch (number) {
     case 1:
     case 21: player.flameEnergy += number == 1 ? 1 : 10; player.storedEnergy = player.flameEnergy; break;
@@ -542,6 +584,8 @@ void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map,
             continue;
         }
         if (player.teleportPhase) {
+            if (player.teleportPhase == 1 && player.teleportFrame == TeleLast - 1)
+                timing.sounds.push_back({SoundCue::Teleport, -3});
             animateTeleport(player);
             continue;
         }
@@ -585,7 +629,11 @@ void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map,
         const Point current{word(subcell(screen.x)), word(subcell(screen.y))};
         conveyor(step, std::as_const(map).at(current.x, current.y).slab);
         step = testWall(player, screen, step, map);
-        tickEffects(player);
+        if (tickEffects(player)) {
+            timing.sounds.push_back({SoundCue::DiseaseEnd, -5});
+            if (std::ranges::none_of(player.effects, [](auto time) { return time != 0; }))
+                player.lastBonus = 0;
+        }
         const auto visible = std::as_const(map).at(current.x, current.y).visible;
         const bool crushed = visible == 1 || visible == 2 || visible == 3 || visible == 30 || visible == 31;
         if (bombs && ((bombs->flameMask(current.x, current.y) && !player.effects[6]) || crushed)) {
@@ -593,6 +641,7 @@ void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map,
             player.noMoveDeaths = timing.survivor ? 20 : player.noMoveDeaths + 1;
             player.deathFrame = 72 + 1; // TestMort enters AnimMort in the same VBL.
             player.frame = player.deathFrame;
+            timing.sounds.push_back({SoundCue::Death, 30});
             continue;
         }
         if (bombs && visible == 28)

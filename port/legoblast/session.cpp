@@ -61,6 +61,7 @@ void Session::startRound(RandomState random, bool newRound) {
 
 void Session::resetMatch() {
     players_ = Players{};
+    sounds_.clear();
     score_.fill(0);
     roundNumber_ = 0;
     arenaIndex_ = firstArena_;
@@ -89,8 +90,10 @@ void Session::tickClock() {
     }
     if (warning_) {
         --warning_;
-        if (warning_ == 10 * TicksPerSecond)
+        if (warning_ == 10 * TicksPerSecond) {
+            sounds_.push_back({SoundCue::Alarm, 33, 3});
             closeEntries();
+        }
     }
     alert_ = warning_ && warning_ <= 10 * TicksPerSecond;
     if (!warning_ && level_.totalTime > level_.warningTime)
@@ -98,9 +101,11 @@ void Session::tickClock() {
 }
 
 void Session::tick(const Controls& input) {
+    sounds_.clear();
     if (paused_)
         return;
     if (phase_ == RoundPhase::Result || phase_ == RoundPhase::MatchComplete) {
+        players_.tickResult();
         if (resultDelay_)
             --resultDelay_;
         if (!resultDelay_ && hasFire(input)) {
@@ -120,9 +125,11 @@ void Session::tick(const Controls& input) {
         tickClock();
 
     if (timing_.autoCounter % 4 == 0)
-        players_.tickBumpers(map_);
+        players_.tickBumpers(map_, sounds_);
     const auto previousSlots = players_.slots();
+    timing_.sounds.clear();
     players_.tick(input, timing_, map_, &bombs_);
+    sounds_.insert(sounds_.end(), timing_.sounds.begin(), timing_.sounds.end());
     if (timing_.levelTimerRunning && phase_ == RoundPhase::AwaitingPlayers)
         phase_ = RoundPhase::Running;
 
@@ -144,6 +151,7 @@ void Session::tick(const Controls& input) {
         const bool retry = options_.survivor ? living > 1 :
             living && slots[i].noMoveDeaths <= 1 && beforeClosing && timeUsed / TicksPerSecond <= DontMoveSeconds;
         if (retry) {
+            sounds_.push_back({SoundCue::DontMove, 34});
             startRound(bombs_.randomState(), false);
             return;
         }
@@ -159,6 +167,9 @@ void Session::tick(const Controls& input) {
     }
 
     bombs_.tick(map_);
+    auto& bombSounds = bombs_.sounds();
+    sounds_.insert(sounds_.end(), bombSounds.begin(), bombSounds.end());
+    bombSounds.clear();
     if (phase_ == RoundPhase::Draining && bombs_.settled() &&
         std::ranges::none_of(slots, [](const auto& p) {
             return appeared(p) && !p.dead && (p.deathFrame || p.teleportPhase);
@@ -194,6 +205,8 @@ void Session::endRound() {
         if (options_.teams)
             ++score_[teamSurvives[0] ? 0 : 1];
     }
+    players_.startResult(winner, winner ? winnerAnimation_ : drawAnimation_);
+    sounds_.push_back({winner ? SoundCue::Victory : SoundCue::Draw, 40});
     const bool matchComplete = (options_.teams || options_.fiveWins) &&
         std::ranges::any_of(score_, [](auto score) { return score >= Wins; });
     arenasFinished_ = !matchComplete && options_.arena == ArenaMode::Sequential && arenaIndex_ + 1 == arenas_.size();
@@ -236,6 +249,7 @@ void Session::tickClosing() {
         return;
     const auto tile = closingOrder_[nextClosing_++];
     bombs_.placeClosingBlock(tile, map_);
+    sounds_.push_back({SoundCue::ClosingBlock, -16});
     closingFrames_.push_back({tile, level_.blocks[FillBlockIndex]});
     closingDelay_ = 1;
 }

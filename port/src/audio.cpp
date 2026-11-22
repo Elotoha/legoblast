@@ -27,6 +27,7 @@ Mixer::Mixer(std::size_t voiceCount) : voices_(voiceCount) {
 void Mixer::play(const Music& cue) {
     music_ = &cue;
     musicPosition_ = 0;
+    musicVolume_ = cue.volume;
     enabledStems_.assign(cue.stems.size(), true);
 }
 
@@ -62,7 +63,7 @@ void Mixer::render(std::span<float> stereo) {
             const auto next = frame + 1 == music_->loopEnd ? music_->loopStart : frame + 1;
             for (std::size_t i = 0; i < music_->stems.size(); ++i)
                 if (enabledStems_[i])
-                    mixFrame(output, music_->stems[i], musicPosition_, next, music_->volume);
+                    mixFrame(output, music_->stems[i], musicPosition_, next, musicVolume_);
             musicPosition_ += music_->stems.front().rate;
             const auto end = music_->loopEnd * static_cast<std::uint64_t>(Rate);
             const auto start = music_->loopStart * static_cast<std::uint64_t>(Rate);

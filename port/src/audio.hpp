@@ -10,6 +10,7 @@ public:
 
     explicit Mixer(std::size_t voiceCount);
     void play(const Music& cue);
+    void setMusicVolume(float volume) { musicVolume_ = volume; }
     void enableStem(std::size_t index, bool enabled);
     bool play(const Sound& sound, unsigned repetitions = 1);
     void render(std::span<float> stereo);
@@ -24,6 +25,7 @@ private:
 
     const Music* music_{};
     std::uint64_t musicPosition_{};
+    float musicVolume_{};
     std::vector<bool> enabledStems_;
     std::vector<Voice> voices_;
     std::uint64_t order_{};

@@ -81,6 +81,7 @@ bool BombField::plant(unsigned owner, Point center, PlayerMap& map, const BombSe
         map.bombVelocities[id] = {};
     }
     markBomb(map, p, id);
+    sounds_.push_back({SoundCue::Plant, -15});
     return true;
 }
 
@@ -122,6 +123,7 @@ void BombField::tickBombs(PlayerMap& map) {
             }
             blasts_.push_back(std::move(blast));
             flameSlots_ += 4;
+            sounds_.push_back({SoundCue::Explosion, 0});
             continue;
         }
 
@@ -183,9 +185,11 @@ void BombField::moveBomb(std::size_t id, PlayerMap& map) {
     }
     if (bounce) {
         velocity = {short(-velocity.x), short(-velocity.y)};
+        sounds_.push_back({SoundCue::Rebound, -11});
         return;
     }
     if (blocked) {
+        sounds_.push_back({SoundCue::BombImpact, -13});
         if (horizontal)
             velocity.x = 0;
         else

@@ -1,5 +1,5 @@
 {
   "name": "legoblast-source-port",
   "version-string": "0.1.0",
-  "dependencies": ["sdl3"]
+  "dependencies": ["sdl3", "libsndfile"]
 }

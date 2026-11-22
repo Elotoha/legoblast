@@ -1,4 +1,5 @@
-#include "session.hpp"
+#include "hud.hpp"
+#include "sound_output.hpp"
 #include "sprite.hpp"
 
 #include <SDL3/SDL.h>
@@ -19,7 +20,9 @@ using Handle = std::unique_ptr<T, decltype(Destroy)>;
 using Texture = Handle<SDL_Texture, SDL_DestroyTexture>;
 constexpr int BoardWidth = Width * TileSize;
 constexpr int BoardHeight = Height * TileSize;
-constexpr int HudHeight = 26;
+constexpr int ScreenWidth = Hud::Width / 2;
+constexpr int ScreenHeight = BoardHeight + Hud::Height;
+constexpr int BoardX = (ScreenWidth - BoardWidth) / 2;
 
 void check(bool success) {
     if (!success)
@@ -120,7 +123,7 @@ Session makeSession(const std::filesystem::path& binary, const std::filesystem::
 }
 
 int view(const std::filesystem::path& root, const std::filesystem::path& spriteFile,
-         const std::filesystem::path& levelFile, bool smoke, MatchOptions options) {
+         const std::filesystem::path& levelFile, bool smoke, MatchOptions options, unsigned track) {
     const auto binary = root / "binary";
     auto session = makeSession(binary, levelFile, options);
     const auto& level = session.arena();
@@ -140,20 +143,25 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
     const auto independent = readBytes(binary / "Lego_Sprites8.dat");
     const auto independentIndices = readBytes(binary / "Lego_SpritesIndex8.dat");
     const auto independentPalette = readBytes(binary / "Mec8_normal.col");
+    const Hud hud(spriteFile.parent_path());
     unsigned smokeFrame = 0;
 
     check(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD));
     Gamepads pads;
+    const auto audio = root / "audio";
+    SoundOutput sound(std::filesystem::is_directory(audio) ? audio : LEGOBLAST_AUDIO_PATH, track, smoke);
     SDL_Window* windowRaw{};
     SDL_Renderer* rendererRaw{};
-    check(SDL_CreateWindowAndRenderer("LegoBlast", 912, 798,
+    check(SDL_CreateWindowAndRenderer("LegoBlast", 3 * ScreenWidth, 3 * ScreenHeight,
                                      SDL_WINDOW_RESIZABLE, &windowRaw, &rendererRaw));
     Handle<SDL_Window, SDL_DestroyWindow> window(windowRaw, SDL_DestroyWindow);
     Handle<SDL_Renderer, SDL_DestroyRenderer> renderer(rendererRaw, SDL_DestroyRenderer);
-    check(SDL_SetRenderLogicalPresentation(renderer.get(), BoardWidth, BoardHeight + HudHeight,
+    check(SDL_SetRenderLogicalPresentation(renderer.get(), ScreenWidth, ScreenHeight,
                                           SDL_LOGICAL_PRESENTATION_INTEGER_SCALE));
-    check(SDL_SetWindowMinimumSize(window.get(), BoardWidth, BoardHeight + HudHeight));
+    check(SDL_SetWindowMinimumSize(window.get(), ScreenWidth, ScreenHeight));
     auto background = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, BoardWidth, BoardHeight);
+    auto bar = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, Hud::Width, Hud::Height);
+    auto wood = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, ScreenWidth, Hud::Height);
     auto sprite = texture(renderer.get(), SDL_PIXELFORMAT_RGBA32, SpriteWidth, SpriteHeight);
     check(SDL_SetTextureBlendMode(sprite.get(), SDL_BLENDMODE_BLEND));
 
@@ -189,6 +197,8 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
                 input[static_cast<std::size_t>(Control::Joy1)].fire = smokeFrame == 1;
             }
             session.tick(input);
+            sound.tick(session.sounds(), session.paused(),
+                       session.phase() == RoundPhase::Result || session.phase() == RoundPhase::MatchComplete);
         }
         const auto& bombs = session.bombs();
         const auto& map = session.map();
@@ -225,42 +235,35 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
         check(SDL_UpdateTexture(background.get(), nullptr, rgb.data(), BoardWidth * 3));
         check(SDL_SetRenderDrawColor(renderer.get(), 14, 19, 29, 255));
         check(SDL_RenderClear(renderer.get()));
-        const SDL_FRect boardBox{0, HudHeight, BoardWidth, BoardHeight};
+        const SDL_FRect boardBox{BoardX, 0, BoardWidth, BoardHeight};
         check(SDL_RenderTexture(renderer.get(), background.get(), nullptr, &boardBox));
-        check(SDL_SetRenderDrawColor(renderer.get(), 238, 235, 200, 255));
-        const auto label = "MANCHE " + std::to_string(session.roundNumber()) +
-                           "   " + std::to_string(session.remaining() / 50) + " S   " +
-                           std::to_string(session.score()[0]) + " - " + std::to_string(session.score()[1]);
-        check(SDL_RenderDebugText(renderer.get(), 6, 4, label.c_str()));
+        const bool independentMode = std::ranges::count_if(session.players(), [](const auto& player) {
+            return player.control >= 0;
+        }) > 4;
+        const SDL_FRect barBox{0, BoardHeight, ScreenWidth, Hud::Height};
+        const auto barRgb = levelRgb(hud.render(session, independentMode), boardPalette);
+        check(SDL_UpdateTexture(bar.get(), nullptr, barRgb.data(), Hud::Width * 3));
         std::string message;
         if (session.paused()) message = "PAUSE";
-        else if (session.phase() == RoundPhase::AwaitingPlayers)
-            message = session.retrying() ? (session.survivorMode() ? "SURVIVOR" : "DON'T MOVE") :
-                "FEU POUR APPARAITRE";
-        else if (session.phase() == RoundPhase::Result || session.phase() == RoundPhase::MatchComplete) {
-            const auto winning = std::ranges::find(session.winners(), true);
-            if (session.arenasFinished()) message = "FIN DES ARENES";
-            else if (winning == session.winners().end()) message = "EGALITE";
-            else {
-                const auto slot = winning - session.winners().begin();
-                message = (session.isTeamMatch() ? "EQUIPE " + std::to_string(slot % 2 + 1) :
-                           "JOUEUR " + std::to_string(slot + 1)) +
-                    (session.phase() == RoundPhase::MatchComplete ? " GAGNE LE MATCH" : " GAGNE");
-            }
-            message += " / FEU";
-        } else if (session.alert()) message = "ALERTE";
-        if (!message.empty())
-            check(SDL_RenderDebugText(renderer.get(), 6, 15, message.c_str()));
+        else if (session.phase() == RoundPhase::AwaitingPlayers && session.retrying())
+            message = session.survivorMode() ? "SURVIVOR" : "DON'T MOVE";
+        if (message.empty()) {
+            check(SDL_RenderTexture(renderer.get(), bar.get(), nullptr, &barBox));
+        } else {
+            const auto woodRgb = levelRgb(hud.wood(), boardPalette);
+            check(SDL_UpdateTexture(wood.get(), nullptr, woodRgb.data(), ScreenWidth * 3));
+            check(SDL_RenderTexture(renderer.get(), wood.get(), nullptr, &barBox));
+            check(SDL_SetRenderDrawColor(renderer.get(), 255, 255, 255, 255));
+            check(SDL_RenderDebugText(renderer.get(), (ScreenWidth - message.size() * SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) / 2.0f,
+                                      BoardHeight + 5, message.c_str()));
+        }
         std::vector<const Player*> visiblePlayers;
         for (const auto& player : session.players())
-            if (player.visible)
+            if (player.visible && !session.paused())
                 visiblePlayers.push_back(&player);
         std::stable_sort(visiblePlayers.begin(), visiblePlayers.end(), [](const auto* a, const auto* b) {
             return a->sprite.y < b->sprite.y;
         });
-        const bool independentMode = std::ranges::count_if(session.players(), [](const auto& player) {
-            return player.control >= 0;
-        }) > 4;
         for (const auto* player : visiblePlayers) {
             const auto frame = player->frame + player->imageOffset;
             const auto slot = static_cast<unsigned>(player - session.players().data());
@@ -269,7 +272,7 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
                 attachedSprite(sprites, indices, palette, player->frameBase + frame);
             check(SDL_UpdateTexture(sprite.get(), nullptr, image.data(), SpriteWidth * 4));
             const auto point = player->center();
-            const SDL_FRect box{float(point.x - 7), float(point.y - 20 + HudHeight), SpriteWidth, SpriteHeight};
+            const SDL_FRect box{float(BoardX + point.x - 7), float(point.y - 20), SpriteWidth, SpriteHeight};
             check(SDL_RenderTexture(renderer.get(), sprite.get(), nullptr, &box));
         }
         check(SDL_RenderPresent(renderer.get()));
@@ -293,6 +296,7 @@ int main(int argc, char* argv[]) {
     try {
         MatchOptions options;
         bool smoke = false;
+        unsigned track = 1;
         std::vector<std::string_view> paths;
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg = argv[i];
@@ -303,6 +307,12 @@ int main(int argc, char* argv[]) {
             else if (arg == "--random") options.arena = ArenaMode::Random;
             else if (arg == "--dyna") options.arena = ArenaMode::Dynablaster;
             else if (arg == "--smoke") smoke = true;
+            else if (arg.starts_with("--music=")) {
+                const auto value = arg.substr(8);
+                if (value.size() != 1 || value[0] < '0' || value[0] > '4')
+                    throw std::runtime_error("expected --music=0 through --music=4");
+                track = value[0] - '0';
+            }
             else paths.push_back(arg);
         }
         if (options.teams && options.survivor)
@@ -316,12 +326,12 @@ int main(int argc, char* argv[]) {
                 throw std::runtime_error(SDL_GetError());
             const std::filesystem::path root = std::filesystem::path(reinterpret_cast<const char8_t*>(base)) / "data";
             return view(root, root / "binary/LEGO_SPRITES.DAT",
-                        root / "binary" / ("Lego_Level" + std::string(number) + ".dat"), smoke, options);
+                        root / "binary" / ("Lego_Level" + std::string(number) + ".dat"), smoke, options, track);
         }
         if (paths.size() != 3)
             throw std::runtime_error("usage: legoblast_players [LEVEL | AMIGA_SRC SPRITES LEVEL.dat] "
                                      "[--free] [--teams | --survivor] [--sequential | --random | --dyna]");
-        return view(paths[0], paths[1], paths[2], smoke, options);
+        return view(paths[0], paths[1], paths[2], smoke, options, track);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

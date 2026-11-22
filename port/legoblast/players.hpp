@@ -1,6 +1,7 @@
 #pragma once
 
 #include "level.hpp"
+#include "sound_cues.hpp"
 
 #include <array>
 
@@ -37,6 +38,7 @@ struct Player {
     int teleportFrame{168}, teleportPhase{-1}, teleportPermission{};
     int fireRequest{}, slowBumper{}, blockedTicks{}, repeatFire{}, deathFrame{};
     int bombCapacity{}, flameEnergy{}, fuse{}, loops{}, imageOffset{};
+    unsigned lastBonus{};
     std::array<int, 9> effects{};
     int storedEnergy{}, storedFuse{}, storedLoops{}, storedSpeed{}, temporaryBombs{}, immunityFlash{};
     bool clock{};
@@ -60,6 +62,7 @@ struct PlayerTick {
     bool requestClearBar{};
     bool teams{};
     bool survivor{};
+    std::vector<SoundRequest> sounds;
 };
 
 struct Bumper {
@@ -74,7 +77,9 @@ public:
     void prepare(const Level& level, bool newLevel, bool dynaLevel);
     void tick(const Controls& controls, PlayerTick& timing, PlayerMap& map, BombField* bombs = nullptr);
     void eliminateAbsent();
-    void tickBumpers(PlayerMap& map);
+    void tickBumpers(PlayerMap& map, std::vector<SoundRequest>& sounds);
+    void startResult(bool victory, unsigned& animationIndex);
+    void tickResult();
     const auto& slots() const { return players_; }
     const auto& bumpers() const { return bumpers_; }
 

@@ -1,4 +1,5 @@
 #include "assets.hpp"
+#include "audio_io.hpp"
 
 #include <nlohmann/json.hpp>
 #include <png.h>
@@ -51,26 +52,6 @@ ImagePixels png(const Path& path, bool indexed, bool mask = false) {
     if (indexed)
         image.palette.resize(reader.colormap_entries * 4);
     return image;
-}
-
-AudioClip audio(const Path& path, int type) {
-    SF_INFO info{};
-    const auto filename = path.string();
-    std::unique_ptr<SNDFILE, decltype(&sf_close)> input(sf_open(filename.c_str(), SFM_READ, &info), sf_close);
-    if (!input)
-        throw std::runtime_error(filename + ": " + sf_strerror(nullptr));
-    require((info.format & SF_FORMAT_TYPEMASK) == type, "audio container differs from manifest");
-    if (type == SF_FORMAT_WAV)
-        require((info.format & SF_FORMAT_SUBMASK) == SF_FORMAT_PCM_16, "expected 16-bit PCM WAV");
-    require(info.samplerate > 0 && info.samplerate <= 192000 &&
-            (info.channels == 1 || info.channels == 2) &&
-            info.frames > 0 && info.frames <= 32'000'000 / info.channels,
-            "unsupported audio rate, channels or length");
-    AudioClip clip{static_cast<unsigned>(info.samplerate), static_cast<unsigned>(info.channels),
-                   std::vector<float>(static_cast<std::size_t>(info.frames) * info.channels)};
-    require(sf_readf_float(input.get(), clip.samples.data(), info.frames) == info.frames,
-            "truncated audio");
-    return clip;
 }
 
 Size dimensions(const Json& values) {
@@ -156,7 +137,7 @@ Assets loadAssets(const std::filesystem::path& package) {
         result.images.emplace(id, loadImage(package, entry));
     });
     readGroup(manifest, "sounds", [&](const auto& id, const auto& entry) {
-        result.sounds.emplace(id, Sound{audio(file(package, entry.at("file"), ".wav"), SF_FORMAT_WAV),
+        result.sounds.emplace(id, Sound{loadAudioClip(file(package, entry.at("file"), ".wav"), SF_FORMAT_WAV),
                                        entry.value("priority", 0), volume(entry)});
     });
     readGroup(manifest, "music", [&](const auto& id, const auto& entry) {
@@ -165,7 +146,7 @@ Assets loadAssets(const std::filesystem::path& package) {
         require(filenames.is_array() && !filenames.empty() && filenames.size() <= 32,
                 "expected 1 to 32 music stems");
         for (const auto& name : filenames)
-            music.stems.push_back(audio(file(package, name, ".flac"), SF_FORMAT_FLAC));
+            music.stems.push_back(loadAudioClip(file(package, name, ".flac"), SF_FORMAT_FLAC));
         const auto& first = music.stems.front();
         for (const auto& clip : music.stems)
             require(clip.rate == first.rate && clip.frames() == first.frames(),

@@ -7,7 +7,7 @@ find_path(SNDFILE_INCLUDE_DIR sndfile.h REQUIRED)
 find_library(SNDFILE_LIBRARY NAMES sndfile libsndfile.so.1 REQUIRED)
 find_package(nlohmann_json 3.11 CONFIG REQUIRED)
 
-add_library(port_runtime src/assets.cpp src/audio.cpp src/display.cpp)
+add_library(port_runtime src/assets.cpp src/audio.cpp src/audio_io.cpp src/display.cpp)
 target_compile_features(port_runtime PUBLIC cxx_std_20)
 target_include_directories(port_runtime PUBLIC src PRIVATE "${SNDFILE_INCLUDE_DIR}")
 target_link_libraries(port_runtime PUBLIC SDL3::SDL3 PRIVATE PNG::PNG "${SNDFILE_LIBRARY}" nlohmann_json::nlohmann_json)

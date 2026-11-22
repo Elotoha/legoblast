@@ -1,6 +1,7 @@
 #pragma once
 
 #include "level.hpp"
+#include "sound_cues.hpp"
 
 #include <deque>
 
@@ -47,6 +48,7 @@ public:
     const Level& level() const { return level_; }
     RandomState randomState() const { return random_; }
     std::uint8_t flameMask(int x, int y) const;
+    auto& sounds() { return sounds_; }
 
 private:
     struct Arm {
@@ -76,5 +78,6 @@ private:
     bool bombPass_{true};
     int frozenTicks_{};
     RandomState random_{};
+    std::vector<SoundRequest> sounds_;
 };
 }

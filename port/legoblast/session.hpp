@@ -39,11 +39,13 @@ public:
     bool paused() const { return paused_; }
     bool alert() const { return alert_; }
     bool isTeamMatch() const { return options_.teams; }
+    bool fiveWinMatch() const { return options_.fiveWins; }
     bool survivorMode() const { return options_.survivor; }
     bool retrying() const { return retrying_; }
     const Level& arena() const { return level_; }
     std::size_t arenaIndex() const { return arenaIndex_; }
     bool arenasFinished() const { return arenasFinished_; }
+    std::span<const SoundRequest> sounds() const { return sounds_; }
 
 private:
     void startRound(RandomState random, bool newRound = true);
@@ -66,8 +68,10 @@ private:
     std::array<bool, PlayerCount> winners_{};
     std::vector<Point> closingOrder_;
     std::vector<ClosingFrame> closingFrames_;
+    std::vector<SoundRequest> sounds_;
     std::size_t nextClosing_{};
     unsigned closingDelay_{}, warning_{}, remaining_{}, resultDelay_{}, appeared_{}, roundNumber_{};
+    unsigned winnerAnimation_{}, drawAnimation_{};
     bool paused_{}, alert_{}, entriesClosed_{}, retrying_{};
     bool arenasFinished_{};
     RoundPhase phase_{RoundPhase::AwaitingPlayers};

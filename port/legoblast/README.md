@@ -28,7 +28,7 @@ Le moteur reçoit les huit entrées logiques de `JoyList` et maintient six empla
 
 L’animation utilise les mêmes numéros d’images et repasse à l’arrêt en image 33. Le déplacement reprend `TestDir`, `ScreenPos`, `CentreJ`, `TestFleche`, `TestMur` et `CalcVue`. La carte conserve la séparation de `Dim2` et `Dim7` sur des sous-cellules de huit pixels. Les tests distinguent le mouvement autorisé de l’animation, qui récupère `DirJoue` même face à un mur. Les branches de collision avec une bombe lisent le numéro et la vitesse fournis par l’appelant. Les téléporteurs suivent les demi-cases de destination et la séquence disparition, saut puis apparition.
 
-La fenêtre SDL3 facultative dessine le terrain et la banque de sprites attachés d’origine. Extraire `LEGO_SPRITES.DAT` de `amiga/release_aminet/LegoBlast.lha`, puis utiliser le chemin obtenu.
+La fenêtre utilise SDL3 et libsndfile. Extraire `amiga/release_aminet/LegoBlast.lha` et passer le chemin de `binary/LEGO_SPRITES.DAT` dans le dossier extrait. Les quatre barres de joueurs, la barre en bois et leurs banques sont lues à côté de ce fichier.
 
 ```sh
 cmake -S port/legoblast -B /tmp/legoblast-source -DLEGOBLAST_PLAYER_VIEW=ON
@@ -72,7 +72,7 @@ Feu passe à la manche suivante après le résultat et fait apparaître le joueu
 
 Le moteur avance par pas de 20 ms. `legoblast_session_checks` vérifie cinq victoires consécutives, le match nul, la conservation des commandes, la pause, le départ différé du chronomètre, le premier bloc de la spirale et la résolution du temps écoulé avec une bombe active. Le workflow Windows lance également l'exécutable emballé avec `--smoke` et vérifie le passage entre deux manches au niveau 001.
 
-La barre de score est provisoire. La validation image par image sur Amiga, les animations de résultat, le podium et le son restent à intégrer.
+La barre de joueurs utilise les portraits, chiffres et jauges Amiga. Les joueurs survivants reprennent les séquences de victoire et d'égalité de `ChooseAnim` et `AnimEnd`. Feu démarre un nouveau match après la cinquième victoire. Le podium, les menus Amiga, le joueur Micro et la comparaison image par image avec l’Amiga restent à intégrer.
 
 
 ## Essayer les autres modes
@@ -87,3 +87,14 @@ La barre de score est provisoire. La validation image par image sur Amiga, les a
 Les quatre manettes SDL peuvent rejoindre avec le bouton du bas et se déplacer au stick gauche ou à la croix. Les règles de redémarrage « Don't Move » s'appliquent après une mort rapide. Le compteur de victoires est conservé et les joueurs reviennent automatiquement avec leur commande. Les bumpers surveillent les cases devant eux, animent leur piston et poussent les joueurs et les bombes.
 
 Le port utilise une graine déterministe. Le menu Amiga inclut aussi une liste d'arènes activables. Les options en ligne de commande chargent les niveaux présents sur disque et excluent le dernier monde en jeu individuel.
+
+
+## Ressources sonores
+
+Le paquet contient les 20 effets de `samples.def` au format WAV PCM 16 bits et les cinq modules P61 au format FLAC. La conversion des effets conserve les mots PCM envoyés à Paula par `ChargeOneSon` et utilise la période du sample pour calculer sa fréquence PAL. Les pistes de jeu sont rendues en trois canaux Tracker, avec un canal réservé aux effets pendant la partie. Le FLAC conserve sans perte le rendu de xmp en stéréo à 48 kHz. La comparaison du mix et des points de boucle avec P61 sur Amiga reste à effectuer.
+
+La musique 1 démarre par défaut. Lancer `legoblast_players.exe --music=2` pour choisir la piste 2 ou `legoblast_players.exe --music=0` pour jouer avec les effets seuls. La piste du menu est incluse parmi les ressources converties. Pour régénérer les fichiers avec xmp 4.2, libxmp 4.6 et FFmpeg disponibles dans le PATH, exécuter depuis la racine du dépôt
+
+```sh
+python3 port/legoblast/export_audio.py amiga/src port/legoblast/audio
+```
