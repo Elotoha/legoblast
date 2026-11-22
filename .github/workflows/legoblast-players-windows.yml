@@ -22,6 +22,7 @@ jobs:
             /amiga/release_aminet/LegoBlast.lha
             /amiga/src/LEGO_WORLDS/*.col
             /amiga/src/binary/Lego_Level*.dat
+            /amiga/src/binary/Lego_Flam_*.Dat
             /amiga/src/binary/Lego_Blocs.dat
             /amiga/src/binary/bobs_nus22.col
             /amiga/src/binary/Lego_Sprites.col
@@ -45,7 +46,7 @@ jobs:
           New-Item -ItemType Directory package/data/binary, package/data/LEGO_WORLDS | Out-Null
           Copy-Item build/Release/legoblast_players.exe package/
           Copy-Item port/legoblast/README.md package/
-          Copy-Item amiga/src/binary/Lego_Level*.dat package/data/binary/
+          Copy-Item amiga/src/binary/Lego_Level*.dat, amiga/src/binary/Lego_Flam_*.Dat package/data/binary/
           Copy-Item amiga/src/binary/Lego_Blocs.dat, amiga/src/binary/bobs_nus22.col, amiga/src/binary/Lego_Sprites.col, amiga/src/binary/Lego_SpritesIndex.dat package/data/binary/
           Copy-Item amiga/src/LEGO_WORLDS/*.col package/data/LEGO_WORLDS/
           Copy-Item build/amiga-release/binary/LEGO_SPRITES.DAT package/data/binary/

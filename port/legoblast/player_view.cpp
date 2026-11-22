@@ -1,3 +1,4 @@
+#include "bombs.hpp"
 #include "players.hpp"
 #include "sprite.hpp"
 
@@ -9,6 +10,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
 
 using namespace legoblast;
 
@@ -50,8 +52,15 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
          const std::filesystem::path& levelFile, bool smoke) {
     const auto binary = root / "binary";
     const auto level = loadLevel(levelFile);
-    const auto board = staticLevelRgb(level, readBytes(binary / "Lego_Blocs.dat"),
-                                      readLevelPalette(root, level.palette));
+    const auto bank = readBytes(binary / "Lego_Blocs.dat");
+    const auto boardPalette = readLevelPalette(root, level.palette);
+    constexpr std::array<const char*, 3> flameFiles{
+        "Lego_Flam_bib.Dat", "Lego_Flam_Manu.Dat", "Lego_Flam_lazer.Dat",
+    };
+    const auto flameBank = readBytes(binary / flameFiles.at(level.flamePalette));
+    auto terrain = staticLevelIndices(level, bank);
+    auto displayedTiles = level.tiles;
+    BombField bombs(level);
     const auto sprites = readBytes(spriteFile);
     const auto indices = readBytes(binary / "Lego_SpritesIndex.dat");
     const auto palette = readBytes(binary / "Lego_Sprites.col");
@@ -63,7 +72,7 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
     check(SDL_Init(SDL_INIT_VIDEO));
     SDL_Window* windowRaw{};
     SDL_Renderer* rendererRaw{};
-    check(SDL_CreateWindowAndRenderer("LegoBlast - verification des joueurs", 912, 720,
+    check(SDL_CreateWindowAndRenderer("LegoBlast - verification des bombes", 912, 720,
                                      SDL_WINDOW_RESIZABLE, &windowRaw, &rendererRaw));
     Handle<SDL_Window, SDL_DestroyWindow> window(windowRaw, SDL_DestroyWindow);
     Handle<SDL_Renderer, SDL_DestroyRenderer> renderer(rendererRaw, SDL_DestroyRenderer);
@@ -71,7 +80,6 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
                                           SDL_LOGICAL_PRESENTATION_INTEGER_SCALE));
     check(SDL_SetWindowMinimumSize(window.get(), BoardWidth, BoardHeight));
     auto background = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, BoardWidth, BoardHeight);
-    check(SDL_UpdateTexture(background.get(), nullptr, board.data(), BoardWidth * 3));
     auto sprite = texture(renderer.get(), SDL_PIXELFORMAT_RGBA32, SpriteWidth, SpriteHeight);
     check(SDL_SetTextureBlendMode(sprite.get(), SDL_BLENDMODE_BLEND));
 
@@ -80,10 +88,18 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
     bool running = true;
     while (running) {
         SDL_Event event{};
-        while (SDL_PollEvent(&event))
+        while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT ||
                 (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE))
                 running = false;
+            if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F5 && !event.key.repeat) {
+                players = Players{};
+                players.prepare(level, true, false);
+                map = PlayerMap(level);
+                bombs = BombField(level);
+                tick = {};
+            }
+        }
         const auto now = SDL_GetTicks();
         elapsed += smoke ? 20 : std::min<Uint64>(now - previous, 100);
         previous = now;
@@ -91,12 +107,30 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
             auto input = keyboard();
             if (smoke) {
                 input = {};
-                input[static_cast<std::size_t>(Control::Joy0)].fire = tick.autoCounter == 0;
+                input[static_cast<std::size_t>(Control::Joy0)].fire =
+                    tick.autoCounter == 0 || tick.autoCounter == 31;
                 input[static_cast<std::size_t>(Control::Joy1)].fire = tick.autoCounter == 0;
             }
             ++tick.autoCounter;
-            players.tick(input, tick, map);
+            players.tick(input, tick, map, &bombs);
+            bombs.tick(map);
         }
+        if (displayedTiles != bombs.level().tiles) {
+            displayedTiles = bombs.level().tiles;
+            terrain = staticLevelIndices(bombs.level(), bank);
+        }
+        auto frame = terrain;
+        for (const auto& block : bombs.brokenBlocks())
+            drawLevelPattern(frame, block.cell.x * 8, block.cell.y * 8, 16, block.frame, bank);
+        for (int y = 0; y < Height * 2; ++y)
+            for (int x = 0; x < Width * 2; ++x)
+                if (const auto mask = bombs.flameMask(x, y); mask && !std::as_const(map).at(x, y).visible)
+                    drawLevelPattern(frame, x * 8, y * 8, 8, mask, flameBank);
+        for (const auto& bomb : bombs.bombs())
+            if (bomb.active)
+                drawLevelPattern(frame, bomb.cell.x * 8, bomb.cell.y * 8, 16, bomb.frame, bank);
+        const auto rgb = levelRgb(frame, boardPalette);
+        check(SDL_UpdateTexture(background.get(), nullptr, rgb.data(), BoardWidth * 3));
         check(SDL_RenderClear(renderer.get()));
         check(SDL_RenderTexture(renderer.get(), background.get(), nullptr, nullptr));
         for (const auto& player : players.slots()) {
@@ -109,10 +143,13 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
             check(SDL_RenderTexture(renderer.get(), sprite.get(), nullptr, &box));
         }
         check(SDL_RenderPresent(renderer.get()));
-        if (smoke && tick.autoCounter == 31) {
+        if (smoke && tick.autoCounter == 31)
             for (int i = 0; i < 2; ++i)
                 if (players.slots()[i].activation != Activation::Ready || players.slots()[i].frame != 33)
                     throw std::runtime_error("appearance smoke test failed");
+        if (smoke && tick.autoCounter == 31u + 2u * (5u * level.bombTime + 16u) + 3u) {
+            if (bombs.bombs().empty() || bombs.bombs()[0].active || !players.slots()[0].deathFrame)
+                throw std::runtime_error("bomb placement/explosion smoke test failed");
             break;
         }
         if (!smoke)
@@ -129,7 +166,7 @@ int main(int argc, char* argv[]) {
             const char* base = SDL_GetBasePath();
             if (!base)
                 throw std::runtime_error(SDL_GetError());
-            const std::filesystem::path root = std::filesystem::u8path(base) / "data";
+            const std::filesystem::path root = std::filesystem::path(reinterpret_cast<const char8_t*>(base)) / "data";
             return view(root, root / "binary/LEGO_SPRITES.DAT",
                         root / "binary/Lego_Level021.dat", argc == 2);
         }

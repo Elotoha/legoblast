@@ -52,6 +52,11 @@ struct LevelRandoms {
     std::array<std::uint8_t, Width * Height> hiddenBonuses{};
 };
 LevelRandoms initialLevelRandoms(const Level& level, RandomState& state);
+unsigned bonusImage(unsigned bonus);
+Bytes staticLevelIndices(const Level& level, std::span<const std::uint8_t> bank);
+Bytes levelRgb(std::span<const std::uint8_t> indexed, std::span<const std::uint8_t> palette);
+void drawLevelPattern(Bytes& board, int x, int y, unsigned width, unsigned frame,
+                      std::span<const std::uint8_t> bank);
 Bytes staticLevelRgb(const Level& level, std::span<const std::uint8_t> bank,
                      std::span<const std::uint8_t> palette);
 }

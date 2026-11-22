@@ -1,4 +1,5 @@
 #include "players.hpp"
+#include "bombs.hpp"
 
 #include <algorithm>
 #include <bit>
@@ -242,6 +243,7 @@ void Players::prepare(const Level& level, bool newLevel, bool dynaLevel) {
         player.control = old.control;
         player.roundsPlayed = old.roundsPlayed;
         player.animationTicks = old.animationTicks;
+        player.repeatFire = old.repeatFire;
         player.canPush = old.canPush;
         player.noMoveDeaths = old.noMoveDeaths;
         player.dead = old.dead && old.noMoveDeaths > 1;
@@ -285,7 +287,7 @@ void Players::show(Player& player, PlayerTick& timing) {
     player.visible = true;
 }
 
-void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map) {
+void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map, BombField* bombs) {
     join(controls);
     for (auto& player : players_) {
         player.visible = false;
@@ -304,6 +306,12 @@ void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map)
         if (timing.levelInfoState == 0) timing.levelInfoState = 1;
         if (timing.levelInfoState < 0) timing.levelInfoState = 3;
         player.visible = true;
+        if (player.deathFrame) {
+            player.frame = ++player.deathFrame;
+            if (player.deathFrame == 139)
+                player.dead = true;
+            continue;
+        }
         if (player.teleportPhase) {
             animateTeleport(player);
             continue;
@@ -321,11 +329,23 @@ void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map)
         }
         selectAxis(step, player.previousStep);
         const auto screen = player.center();
+        if (!player.fire) {
+            player.repeatFire = -1;
+        } else {
+            player.repeatFire = (player.repeatFire + 1) & 3;
+            if (!player.repeatFire && !timing.gameOver && bombs)
+                bombs->plant(static_cast<unsigned>(&player - players_.data()), screen, map);
+        }
         center(player, screen, step, std::as_const(map));
         const auto desired = step;
         const Point current{word(subcell(screen.x)), word(subcell(screen.y))};
         conveyor(step, std::as_const(map).at(current.x, current.y).slab);
         step = testWall(player, screen, step, map);
+        if (bombs && bombs->flameMask(current.x, current.y)) {
+            player.deathFrame = 72 + 1; // TestMort enters AnimMort in the same VBL.
+            player.frame = player.deathFrame;
+            continue;
+        }
         if (tryTeleport(player, std::as_const(map), current, timing.gameOver))
             continue;
         player.sprite.x = word(player.sprite.x + step.x);

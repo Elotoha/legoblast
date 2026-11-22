@@ -217,10 +217,11 @@ LevelRandoms initialLevelRandoms(const Level& level, RandomState& state) {
 }
 
 // The initial board in Levels.i, using the interleaved mask and six bitplanes in Grafx.i.
-Bytes staticLevelRgb(const Level& level, std::span<const std::uint8_t> bank,
-                     std::span<const std::uint8_t> palette) {
-    if (palette.size() != 64 * 4 || bank.empty() || bank.size() % BlockBytes)
-        throw std::runtime_error("invalid block bank or 0RGB palette");
+unsigned bonusImage(unsigned bonus) { return BonusIdx.at(bonus); }
+
+Bytes staticLevelIndices(const Level& level, std::span<const std::uint8_t> bank) {
+    if (bank.empty() || bank.size() % BlockBytes)
+        throw std::runtime_error("invalid block bank");
     std::array<bool, Width * Height> tele{};
     for (const auto& entry : level.teleporters) {
         const int x = entry.from.x / 2;
@@ -231,7 +232,7 @@ Bytes staticLevelRgb(const Level& level, std::span<const std::uint8_t> bank,
             tele[y * Width + x] = entry.to.x != 0 || entry.to.y != 0;
     }
 
-    Bytes rgb(Width * Height * TileSize * TileSize * 3);
+    Bytes indexed(Width * Height * TileSize * TileSize);
     for (int cell = 0; cell < Width * Height; ++cell) {
         const auto tile = level.tiles[cell];
         const bool black = tile == 255;
@@ -256,10 +257,51 @@ Bytes staticLevelRgb(const Level& level, std::span<const std::uint8_t> bank,
                 const auto value = colorAt(bank, front, 0, x, y, false) | (seeFloor ? backColor : 0);
                 const auto pixel = (cell / Width * TileSize + y) * Width * TileSize +
                                    cell % Width * TileSize + x;
-                std::copy_n(palette.begin() + value * 4 + 1, 3, rgb.begin() + pixel * 3);
+                indexed[pixel] = static_cast<std::uint8_t>(value);
             }
         }
     }
+    return indexed;
+}
+
+Bytes levelRgb(std::span<const std::uint8_t> indexed, std::span<const std::uint8_t> palette) {
+    if (palette.size() != 64 * 4)
+        throw std::runtime_error("invalid 0RGB level palette");
+    Bytes rgb(indexed.size() * 3);
+    for (std::size_t pixel = 0; pixel < indexed.size(); ++pixel)
+        std::copy_n(palette.begin() + indexed[pixel] * 4 + 1, 3, rgb.begin() + pixel * 3);
     return rgb;
+}
+
+Bytes staticLevelRgb(const Level& level, std::span<const std::uint8_t> bank,
+                     std::span<const std::uint8_t> palette) {
+    return levelRgb(staticLevelIndices(level, bank), palette);
+}
+
+// TraceWithFont / TraceLittle: mask the six underlying planes, then OR the image.
+void drawLevelPattern(Bytes& board, int x, int y, unsigned width, unsigned frame,
+                      std::span<const std::uint8_t> bank) {
+    if (width != 8 && width != 16)
+        throw std::runtime_error("unsupported planar width");
+    const unsigned stride = width / 8 * 7;
+    const std::size_t base = std::size_t(frame) * stride * width;
+    if (base + stride * width > bank.size())
+        throw std::runtime_error("invalid planar frame index");
+    for (unsigned py = 0; py < width; ++py) {
+        for (unsigned px = 0; px < width; ++px) {
+            const int screenX = x + static_cast<int>(px);
+            const int screenY = y + static_cast<int>(py);
+            if (screenX < 0 || screenY < 0 || screenX >= Width * TileSize || screenY >= Height * TileSize)
+                continue;
+            const auto offset = base + py * stride + px / 8;
+            auto& result = board.at(screenY * Width * TileSize + screenX);
+            const unsigned bit = 0x80u >> (px & 7);
+            if (!(bank[offset] & bit))
+                result = 0;
+            for (unsigned plane = 0; plane < 6; ++plane)
+                if (bank[offset + (plane + 1) * (width / 8)] & bit)
+                    result |= static_cast<std::uint8_t>(1u << plane);
+        }
+    }
 }
 }
