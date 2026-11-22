@@ -1,0 +1,15 @@
+cmake_minimum_required(VERSION 3.24)
+project(legoblast_source_port LANGUAGES CXX)
+
+add_library(legoblast_source level.cpp)
+target_compile_features(legoblast_source PUBLIC cxx_std_20)
+target_include_directories(legoblast_source PUBLIC .)
+add_executable(legoblast_levels main.cpp)
+target_link_libraries(legoblast_levels PRIVATE legoblast_source)
+
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(legoblast_source_checks checks.cpp)
+  target_link_libraries(legoblast_source_checks PRIVATE legoblast_source)
+  add_test(NAME source_port COMMAND legoblast_source_checks "${CMAKE_CURRENT_SOURCE_DIR}/../../amiga/src")
+endif()
