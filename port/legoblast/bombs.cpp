@@ -7,6 +7,7 @@
 namespace legoblast {
 namespace {
 constexpr unsigned MaxBombs = 300;
+constexpr unsigned MaxFlames = MaxBombs * 4;
 constexpr int BombTile = 29;
 constexpr int Stride = Width * 2;
 
@@ -91,7 +92,9 @@ void BombField::tickBombs(PlayerMap& map) {
             bomb.active = false;
             movement = {};
             clearBomb(map, bomb.cell, static_cast<int>(id));
-            Blast blast{};
+            if (flameSlots_ + 4 > MaxFlames)
+                continue;
+            Blast blast{std::vector<Arm>(4)};
             // NewFlam order: left, top, bottom (Y+1), right (X+1).
             blast.arms[0].front = blast.arms[1].front = bomb.cell;
             blast.arms[2].front = add(bomb.cell, {0, 1});
@@ -102,6 +105,7 @@ void BombField::tickBombs(PlayerMap& map) {
                 blast.arms[arm].remaining = bomb.energy;
             }
             blasts_.push_back(std::move(blast));
+            flameSlots_ += 4;
             continue;
         }
 
@@ -166,8 +170,64 @@ void BombField::tickBlocks(PlayerMap& map) {
     });
 }
 
+// Flammes.i:TestToyoX and TestToyoY. An unaligned leading edge is already
+// inside the pipe. At the outer edge, the entry and exit bits are independent.
+bool BombField::passFlame(Arm& arm, Point point, PlayerMap& map) {
+    if (!inside(point))
+        return false;
+    const auto& cell = std::as_const(map).at(point.x, point.y);
+    const auto type = cell.visible;
+    const bool fireproof = cell.slab == 4 || cell.slab == 6;
+    if (!fireproof && !type)
+        return true;
+    if (!fireproof && type >= 32 && type <= 47) {
+        constexpr unsigned left = 8, right = 4, up = 2, down = 1;
+        const bool horizontal = arm.step.x != 0;
+        const bool positive = arm.step.x > 0 || arm.step.y > 0;
+        const int axis = horizontal ? point.x : point.y;
+        if ((axis & 1) == static_cast<int>(positive))
+            return true;
+        const unsigned forward = horizontal ? (positive ? right : left) : (positive ? down : up);
+        const unsigned entry = horizontal ? (positive ? left : right) : (positive ? up : down);
+        if (!(type & entry))
+            return false;
+        if (type & forward)
+            return true;
+        const Point origin = positive ? point : add(point, arm.step);
+        const auto turn = [&](unsigned port, Point step, Point offset) {
+            if (!(type & port) || flameSlots_ == MaxFlames)
+                return;
+            Arm branch{};
+            branch.front = add(origin, offset);
+            branch.step = step;
+            branch.remaining = arm.remaining - 1;
+            // NewFlam marks each turn as a separate master, with no siblings.
+            blasts_.push_back(Blast{{std::move(branch)}});
+            ++flameSlots_;
+        };
+        if (horizontal) {
+            turn(up, {0, -1}, {0, 1});
+            turn(down, {0, 1}, {});
+        } else {
+            turn(left, {-1, 0}, {1, 0});
+            turn(right, {1, 0}, {});
+        }
+        return false;
+    }
+    if (type == BombTile && cell.bomb >= 0 && static_cast<std::size_t>(cell.bomb) < bombs_.size()) {
+        bombs_[cell.bomb].time = 0;
+        map.bombVelocities[cell.bomb] = {};
+    } else {
+        breakBlock(point, map);
+    }
+    return false;
+}
+
 void BombField::tickFlames(PlayerMap& map) {
-    for (auto& blast : blasts_) {
+    // An appended branch can be visited later in this VBL. Indexing keeps
+    // iteration valid when NewFlam adds a branch to the deque.
+    for (std::size_t i = 0; i < blasts_.size(); ++i) {
+        auto& blast = blasts_[i];
         if (blast.erasing) {
             for (auto& arm : blast.arms) {
                 arm.tail = !arm.path.empty();
@@ -184,24 +244,11 @@ void BombField::tickFlames(PlayerMap& map) {
             if (arm.expanding && --arm.remaining > 0) {
                 arm.path.push_back(arm.front);
                 const auto next = add(arm.front, arm.step);
-                const auto other = add(next, arm.step.x ? Point{0, 1} : Point{1, 0});
-                bool blocked = false;
-                for (const auto point : {next, other}) {
-                    if (!inside(point)) {
-                        blocked = true;
-                        continue;
-                    }
-                    const auto& cell = std::as_const(map).at(point.x, point.y);
-                    if (cell.visible || cell.slab == 4 || cell.slab == 6) {
-                        blocked = true;
-                        if (cell.visible == BombTile && cell.bomb >= 0 &&
-                            static_cast<std::size_t>(cell.bomb) < bombs_.size()) {
-                            bombs_[cell.bomb].time = 0;
-                            map.bombVelocities[cell.bomb] = {};
-                        } else {
-                            breakBlock(point, map);
-                        }
-                    }
+                const bool horizontal = arm.step.x != 0;
+                bool blocked = !passFlame(arm, next, map);
+                if ((horizontal ? next.y : next.x) & 1) {
+                    const auto other = add(next, horizontal ? Point{0, 1} : Point{1, 0});
+                    blocked = !passFlame(arm, other, map) || blocked;
                 }
                 arm.tip = !blocked;
                 if (blocked)
@@ -231,10 +278,13 @@ void BombField::tickFlames(PlayerMap& map) {
         }
     }
     rebuildFlameMasks();
-    std::erase_if(blasts_, [](const auto& blast) {
-        return blast.erasing && std::ranges::all_of(blast.arms, [](const auto& arm) {
+    std::erase_if(blasts_, [&](const auto& blast) {
+        const bool finished = blast.erasing && std::ranges::all_of(blast.arms, [](const auto& arm) {
             return arm.path.empty() && !arm.tip && !arm.tail;
         });
+        if (finished)
+            flameSlots_ -= blast.arms.size();
+        return finished;
     });
 }
 

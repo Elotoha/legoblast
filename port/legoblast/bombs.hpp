@@ -2,6 +2,8 @@
 
 #include "level.hpp"
 
+#include <deque>
+
 namespace legoblast {
 class PlayerMap;
 
@@ -37,18 +39,20 @@ private:
         bool expanding{true}, tip{}, tail{};
     };
     struct Blast {
-        std::array<Arm, 4> arms;
+        std::vector<Arm> arms;
         bool erasing{};
     };
     void tickBombs(PlayerMap& map);
     void tickFlames(PlayerMap& map);
+    bool passFlame(Arm& arm, Point point, PlayerMap& map);
     void breakBlock(Point cell, PlayerMap& map);
     void tickBlocks(PlayerMap& map);
     void rebuildFlameMasks();
     Level level_;
     std::array<std::uint8_t, Width * Height> hiddenBonuses_{};
     std::vector<Bomb> bombs_;
-    std::vector<Blast> blasts_;
+    std::deque<Blast> blasts_;
+    std::size_t flameSlots_{};
     std::vector<BrokenBlock> broken_;
     std::array<std::uint8_t, 2 * Width * 2 * Height> masks_{};
     bool bombPass_{true};
