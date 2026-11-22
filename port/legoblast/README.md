@@ -20,4 +20,21 @@ ctest --test-dir /tmp/legoblast-source --output-on-failure
 
 Le test charge et dessine les 130 fichiers de niveau suivis dans le dépôt. Il contrôle notamment les sorties du générateur, la carte et l’état aléatoire après `DynaInit`, et l’ordre des tirages à l’initialisation. [Rendu des tuiles originales du niveau 021](test-tuyaux.png)
 
-L’image exportée correspond au terrain initial et couvre la grille de 304 × 240 pixels. Le rendu ignore les enregistrements de téléporteur dont la source tombe hors de cette grille, tout en les conservant dans les données décodées. Les comparaisons image par image avec l’Amiga et le portage des déplacements, des bombes, des flammes, des écrans et du son restent à faire. Cet exécutable de vérification ne lance pas une manche.
+L’image exportée correspond au terrain initial et couvre la grille de 304 × 240 pixels. Le rendu ignore les enregistrements de téléporteur dont la source tombe hors de cette grille, tout en les conservant dans les données décodées. Les comparaisons image par image avec l’Amiga et le portage des manches, des flammes, des écrans et du son restent à faire. Cet exécutable de vérification exporte le terrain.
+
+## Vérifier l’apparition et les déplacements
+
+Le moteur reçoit les huit entrées logiques de `JoyList` et maintient six emplacements de joueurs. `prepare` reprend les coordonnées et les paramètres de `PrepPos`. Au premier appui sur Feu, `tick` réserve une manette ou un clavier dans l’ordre d’origine, applique les exclusions de clavier, puis déclenche `NotActive` après l’attente imposée par le mode. Le retour `Don't Move` garde les périphériques attribués et arme l’apparition automatique à 100 VBL.
+
+L’animation utilise les mêmes numéros d’images et repasse à l’arrêt en image 33. Le déplacement reprend `TestDir`, `ScreenPos`, `CentreJ`, `TestFleche`, `TestMur` et `CalcVue`. La carte conserve la séparation de `Dim2` et `Dim7` sur des sous-cellules de huit pixels. Les tests distinguent le mouvement autorisé de l’animation, qui récupère `DirJoue` même face à un mur. Les branches de collision avec une bombe lisent le numéro et la vitesse fournis par l’appelant. Les téléporteurs suivent les demi-cases de destination et la séquence disparition, saut puis apparition.
+
+La fenêtre SDL3 facultative dessine le terrain et la banque de sprites attachés d’origine. Extraire `LEGO_SPRITES.DAT` de `amiga/release_aminet/LegoBlast.lha`, puis utiliser le chemin obtenu.
+
+```sh
+cmake -S port/legoblast -B /tmp/legoblast-source -DLEGOBLAST_PLAYER_VIEW=ON
+cmake --build /tmp/legoblast-source --parallel
+ctest --test-dir /tmp/legoblast-source --output-on-failure
+/tmp/legoblast-source/legoblast_players amiga/src /chemin/LEGO_SPRITES.DAT amiga/src/binary/Lego_Level021.dat
+```
+
+Avec le clavier 1, **Alt droit** fait apparaître le joueur, les **flèches** le déplacent et **Échap** ferme la fenêtre. Le moteur accepte aussi les entrées des autres contrôleurs via son API. Cette fenêtre sert à vérifier la marche et l’apparition. Elle n’exécute ni les manches, ni les maladies, ni les effets sonores, et utilise le mode graphique à sprites attachés. La parité avec des traces d’exécution sur Amiga reste à vérifier.
