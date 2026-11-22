@@ -64,6 +64,7 @@ class Players {
 public:
     void prepare(const Level& level, bool newLevel, bool dynaLevel);
     void tick(const Controls& controls, PlayerTick& timing, PlayerMap& map, BombField* bombs = nullptr);
+    void eliminateAbsent();
     const auto& slots() const { return players_; }
 
 private:

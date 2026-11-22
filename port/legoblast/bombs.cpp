@@ -220,6 +220,33 @@ unsigned BombField::collectBonus(Point cell, PlayerMap& map) {
     return raw - 64;
 }
 
+bool BombField::settled() const {
+    return std::ranges::none_of(bombs_, &Bomb::active) && blasts_.empty();
+}
+
+void BombField::thaw() {
+    if (frozenTicks_)
+        frozenTicks_ = 1;
+}
+
+void BombField::placeClosingBlock(Point tile, PlayerMap& map) {
+    if (tile.x < 0 || tile.x >= Width || tile.y < 0 || tile.y >= Height)
+        return;
+    const Point sub{short(tile.x * 2), short(tile.y * 2)};
+    std::erase_if(broken_, [sub](const BrokenBlock& block) {
+        return block.cell.x == sub.x && block.cell.y == sub.y;
+    });
+    for (const auto point : footprint(sub)) {
+        auto& cell = map.at(point.x, point.y);
+        if (cell.visible == BombTile && cell.bomb >= 0 &&
+            static_cast<std::size_t>(cell.bomb) < bombs_.size())
+            bombs_[cell.bomb].time = 0;
+        cell.visible = 1;
+        cell.bomb = -1;
+    }
+    level_.tiles[tile.y * Width + tile.x] = 1;
+}
+
 void BombField::detonateAll() {
     for (auto& bomb : bombs_)
         if (bomb.active)

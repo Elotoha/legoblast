@@ -1,5 +1,4 @@
-#include "bombs.hpp"
-#include "players.hpp"
+#include "session.hpp"
 #include "sprite.hpp"
 
 #include <SDL3/SDL.h>
@@ -20,6 +19,7 @@ using Handle = std::unique_ptr<T, decltype(Destroy)>;
 using Texture = Handle<SDL_Texture, SDL_DestroyTexture>;
 constexpr int BoardWidth = Width * TileSize;
 constexpr int BoardHeight = Height * TileSize;
+constexpr int HudHeight = 26;
 
 void check(bool success) {
     if (!success)
@@ -60,25 +60,22 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
     const auto flameBank = readBytes(binary / flameFiles.at(level.flamePalette));
     auto terrain = staticLevelIndices(level, bank);
     auto displayedTiles = level.tiles;
-    BombField bombs(level);
+    Session session(level);
     const auto sprites = readBytes(spriteFile);
     const auto indices = readBytes(binary / "Lego_SpritesIndex.dat");
     const auto palette = readBytes(binary / "Lego_Sprites.col");
-    PlayerMap map(level);
-    Players players;
-    players.prepare(level, true, false);
-    PlayerTick tick{};
+    unsigned smokeFrame = 0;
 
     check(SDL_Init(SDL_INIT_VIDEO));
     SDL_Window* windowRaw{};
     SDL_Renderer* rendererRaw{};
-    check(SDL_CreateWindowAndRenderer("LegoBlast - verification des bombes", 912, 720,
+    check(SDL_CreateWindowAndRenderer("LegoBlast - 5 Win Match", 912, 798,
                                      SDL_WINDOW_RESIZABLE, &windowRaw, &rendererRaw));
     Handle<SDL_Window, SDL_DestroyWindow> window(windowRaw, SDL_DestroyWindow);
     Handle<SDL_Renderer, SDL_DestroyRenderer> renderer(rendererRaw, SDL_DestroyRenderer);
-    check(SDL_SetRenderLogicalPresentation(renderer.get(), BoardWidth, BoardHeight,
+    check(SDL_SetRenderLogicalPresentation(renderer.get(), BoardWidth, BoardHeight + HudHeight,
                                           SDL_LOGICAL_PRESENTATION_INTEGER_SCALE));
-    check(SDL_SetWindowMinimumSize(window.get(), BoardWidth, BoardHeight));
+    check(SDL_SetWindowMinimumSize(window.get(), BoardWidth, BoardHeight + HudHeight));
     auto background = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, BoardWidth, BoardHeight);
     auto sprite = texture(renderer.get(), SDL_PIXELFORMAT_RGBA32, SpriteWidth, SpriteHeight);
     check(SDL_SetTextureBlendMode(sprite.get(), SDL_BLENDMODE_BLEND));
@@ -92,12 +89,11 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
             if (event.type == SDL_EVENT_QUIT ||
                 (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE))
                 running = false;
-            if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F5 && !event.key.repeat) {
-                players = Players{};
-                players.prepare(level, true, false);
-                map = PlayerMap(level);
-                bombs = BombField(level);
-                tick = {};
+            if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
+                if (event.key.key == SDLK_F5)
+                    session.resetMatch();
+                if (event.key.key == SDLK_P)
+                    session.togglePause();
             }
         }
         const auto now = SDL_GetTicks();
@@ -107,19 +103,23 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
             auto input = keyboard();
             if (smoke) {
                 input = {};
+                ++smokeFrame;
+                const bool acknowledge = session.phase() == RoundPhase::Result;
                 input[static_cast<std::size_t>(Control::Joy0)].fire =
-                    tick.autoCounter == 0 || tick.autoCounter == 31;
-                input[static_cast<std::size_t>(Control::Joy1)].fire = tick.autoCounter == 0;
+                    smokeFrame == 1 || smokeFrame == 70 || acknowledge;
+                input[static_cast<std::size_t>(Control::Joy1)].fire = smokeFrame == 1;
             }
-            ++tick.autoCounter;
-            players.tick(input, tick, map, &bombs);
-            bombs.tick(map);
+            session.tick(input);
         }
+        const auto& bombs = session.bombs();
+        const auto& map = session.map();
         if (displayedTiles != bombs.level().tiles) {
             displayedTiles = bombs.level().tiles;
             terrain = staticLevelIndices(bombs.level(), bank);
         }
         auto frame = terrain;
+        for (const auto& closing : session.closingFrames())
+            drawLevelPattern(frame, closing.tile.x * 16, closing.tile.y * 16, 16, closing.image, bank);
         for (const auto& block : bombs.brokenBlocks())
             drawLevelPattern(frame, block.cell.x * 8, block.cell.y * 8, 16, block.frame, bank);
         for (int y = 0; y < Height * 2; ++y)
@@ -131,27 +131,45 @@ int view(const std::filesystem::path& root, const std::filesystem::path& spriteF
                 drawLevelPattern(frame, bomb.cell.x * 8, bomb.cell.y * 8, 16, bomb.image(), bank);
         const auto rgb = levelRgb(frame, boardPalette);
         check(SDL_UpdateTexture(background.get(), nullptr, rgb.data(), BoardWidth * 3));
+        check(SDL_SetRenderDrawColor(renderer.get(), 14, 19, 29, 255));
         check(SDL_RenderClear(renderer.get()));
-        check(SDL_RenderTexture(renderer.get(), background.get(), nullptr, nullptr));
-        for (const auto& player : players.slots()) {
+        const SDL_FRect boardBox{0, HudHeight, BoardWidth, BoardHeight};
+        check(SDL_RenderTexture(renderer.get(), background.get(), nullptr, &boardBox));
+        check(SDL_SetRenderDrawColor(renderer.get(), 238, 235, 200, 255));
+        const auto label = "MANCHE " + std::to_string(session.roundNumber()) +
+                           "   " + std::to_string(session.remaining() / 50) + " S   " +
+                           std::to_string(session.score()[0]) + " - " + std::to_string(session.score()[1]);
+        check(SDL_RenderDebugText(renderer.get(), 6, 4, label.c_str()));
+        std::string message;
+        if (session.paused()) message = "PAUSE";
+        else if (session.phase() == RoundPhase::AwaitingPlayers) message = "FEU POUR APPARAITRE";
+        else if (session.phase() == RoundPhase::Result || session.phase() == RoundPhase::MatchComplete) {
+            const auto winning = std::ranges::find(session.winners(), true);
+            if (winning == session.winners().end()) message = "EGALITE";
+            else message = "JOUEUR " + std::to_string(winning - session.winners().begin() + 1) +
+                (session.phase() == RoundPhase::MatchComplete ? " GAGNE LE MATCH" : " GAGNE");
+            message += " / FEU";
+        } else if (session.alert()) message = "ALERTE";
+        if (!message.empty())
+            check(SDL_RenderDebugText(renderer.get(), 6, 15, message.c_str()));
+        for (const auto& player : session.players()) {
             if (!player.visible)
                 continue;
             const auto image = attachedSprite(sprites, indices, palette, player.frameBase + player.frame + player.imageOffset);
             check(SDL_UpdateTexture(sprite.get(), nullptr, image.data(), SpriteWidth * 4));
             const auto point = player.center();
-            const SDL_FRect box{float(point.x - 7), float(point.y - 20), SpriteWidth, SpriteHeight};
+            const SDL_FRect box{float(point.x - 7), float(point.y - 20 + HudHeight), SpriteWidth, SpriteHeight};
             check(SDL_RenderTexture(renderer.get(), sprite.get(), nullptr, &box));
         }
         check(SDL_RenderPresent(renderer.get()));
-        if (smoke && tick.autoCounter == 31)
-            for (int i = 0; i < 2; ++i)
-                if (players.slots()[i].activation != Activation::Ready || players.slots()[i].frame != 33)
-                    throw std::runtime_error("appearance smoke test failed");
-        if (smoke && tick.autoCounter == 31u + 2u * (5u * level.bombTime + 16u) + 3u) {
-            if (bombs.bombs().empty() || bombs.bombs()[0].active || !players.slots()[0].deathFrame)
-                throw std::runtime_error("bomb placement/explosion smoke test failed");
+        if (smoke && session.roundNumber() == 2) {
+            if (session.score()[1] != 1 || session.players()[0].control < 0 ||
+                session.players()[1].control < 0)
+                throw std::runtime_error("match smoke test lost the score or controller");
             break;
         }
+        if (smoke && smokeFrame >= 600)
+            throw std::runtime_error("match smoke test did not finish a round");
         if (!smoke)
             SDL_Delay(2);
     }
@@ -163,7 +181,7 @@ int main(int argc, char* argv[]) {
     struct Quit { ~Quit() { SDL_Quit(); } } quit;
     try {
         if (argc <= 2) {
-            const std::string_view option = argc == 2 ? argv[1] : "021";
+            const std::string_view option = argc == 2 ? argv[1] : "001";
             const bool smoke = option == "--smoke";
             if (!smoke && (option.size() != 3 || option.find_first_not_of("0123456789") != option.npos))
                 throw std::runtime_error("expected a three-digit level number");
@@ -172,7 +190,7 @@ int main(int argc, char* argv[]) {
                 throw std::runtime_error(SDL_GetError());
             const std::filesystem::path root = std::filesystem::path(reinterpret_cast<const char8_t*>(base)) / "data";
             return view(root, root / "binary/LEGO_SPRITES.DAT",
-                        root / "binary" / ("Lego_Level" + std::string(smoke ? "021" : option) + ".dat"), smoke);
+                        root / "binary" / ("Lego_Level" + std::string(smoke ? "001" : option) + ".dat"), smoke);
         }
         if (argc != 4 && (argc != 5 || std::string_view(argv[4]) != "--smoke"))
             throw std::runtime_error("usage: legoblast_players [AMIGA_SRC LEGO_SPRITES.DAT LEVEL.dat] [--smoke]");

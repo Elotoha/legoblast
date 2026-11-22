@@ -20,7 +20,7 @@ ctest --test-dir /tmp/legoblast-source --output-on-failure
 
 Le test charge et dessine les 130 fichiers de niveau suivis dans le dépôt. Il contrôle notamment les sorties du générateur, la carte et l’état aléatoire après `DynaInit`, et l’ordre des tirages à l’initialisation. [Rendu des tuiles originales du niveau 021](test-tuyaux.png)
 
-L’image exportée correspond au terrain initial et couvre la grille de 304 × 240 pixels. Le rendu ignore les enregistrements de téléporteur dont la source tombe hors de cette grille, tout en les conservant dans les données décodées. Les comparaisons image par image avec l’Amiga et le portage des manches, des flammes, des écrans et du son restent à faire. Cet exécutable de vérification exporte le terrain.
+L’image exportée correspond au terrain initial et couvre la grille de 304 × 240 pixels. Le rendu ignore les enregistrements de téléporteur dont la source tombe hors de cette grille, tout en les conservant dans les données décodées. Cet exécutable exporte le terrain pour les comparaisons image par image avec l’Amiga.
 
 ## Vérifier l’apparition et les déplacements
 
@@ -34,16 +34,16 @@ La fenêtre SDL3 facultative dessine le terrain et la banque de sprites attaché
 cmake -S port/legoblast -B /tmp/legoblast-source -DLEGOBLAST_PLAYER_VIEW=ON
 cmake --build /tmp/legoblast-source --parallel
 ctest --test-dir /tmp/legoblast-source --output-on-failure
-/tmp/legoblast-source/legoblast_players amiga/src /chemin/LEGO_SPRITES.DAT amiga/src/binary/Lego_Level021.dat
+/tmp/legoblast-source/legoblast_players amiga/src /chemin/LEGO_SPRITES.DAT amiga/src/binary/Lego_Level001.dat
 ```
 
-Avec le clavier 1, **Alt droit** fait apparaître le joueur, les **flèches** le déplacent et **Échap** ferme la fenêtre. Le moteur accepte aussi les entrées des autres contrôleurs via son API. Cette fenêtre sert à vérifier la marche et l’apparition. Elle n’exécute ni les manches, ni les maladies, ni les effets sonores, et utilise le mode graphique à sprites attachés. La parité avec des traces d’exécution sur Amiga reste à vérifier.
+Avec le clavier 1, **Alt droit** fait apparaître le joueur, les **flèches** le déplacent et **Échap** ferme la fenêtre. Le moteur accepte aussi les entrées des autres contrôleurs via son API.
 
 ### Palette matérielle et test Windows
 
 En mode à quatre sprites attachés, `SUITEO` charge les 32 premières entrées de `Lego_Sprites.col` à partir du registre 64. `SetScreenRegisters` sélectionne la banque 5 avec `BPLCON4 = $0055`. Les quatre plans du sprite adressent les registres 80 à 95. L’indice 0 est transparent et les indices 1 à 15 lisent les entrées 17 à 31 du fichier, en RVB 24 bits. La fenêtre est limitée à ce mode de rendu. Le mode à sprites indépendants utilise `MakeSprPal` et sa propre palette.
 
-Le ZIP Windows x64 est produit par le workflow [Joueurs LegoBlast Windows](https://github.com/Elotoha/legoblast/actions/workflows/legoblast-players-windows.yml). Extraire le ZIP entier, puis ouvrir `legoblast_players.exe`. Le dossier `data` inclut le niveau « Test tuyaux » et la banque de sprites. Appuyer sur **Alt droit** puis utiliser les **flèches**. Pour comparer deux joueurs, lancer une nouvelle fenêtre et utiliser **Espace** et **flèche droite** pour l’apparition des claviers 2 et 3. Ne pas appuyer sur Alt droit dans cette fenêtre, car le clavier 1 exclut les deux autres dans le code d’origine.
+Le ZIP Windows x64 est produit par le workflow [Joueurs LegoBlast Windows](https://github.com/Elotoha/legoblast/actions/workflows/legoblast-players-windows.yml). Extraire le ZIP entier, puis ouvrir `legoblast_players.exe`. Le jeu ouvre le niveau 001, fourni dans `data` avec la banque de sprites. La commande `legoblast_players.exe 021` ouvre « Test tuyaux ». Appuyer sur **Alt droit** puis utiliser les **flèches**. Pour comparer deux joueurs, lancer une nouvelle fenêtre et utiliser **Espace** et **flèche droite** pour l’apparition des claviers 2 et 3. Ne pas appuyer sur Alt droit dans cette fenêtre, car le clavier 1 exclut les deux autres dans le code d’origine.
 
 ## Tester les bombes
 
@@ -53,7 +53,7 @@ La pose reprend `PoseBombe` et `NewBomb`. Elle échantillonne le Feu avant le d�
 
 Les flammes prennent aussi les coudes et les embranchements de tuyaux. Le code suit les bits d’ouverture de `TestToyoX` et `TestToyoY`. Une sortie dans l’axe conserve la propagation en ligne droite. Lorsque cette sortie est fermée, chaque branche latérale ouverte devient une flamme indépendante et perd une unité d’énergie. Les tests couvrent le passage dans les deux sens, le refus d’une entrée fermée, les coudes, l’embranchement, la priorité à la sortie droite et la réaction en chaîne après un coude.
 
-Les collisions de poussée de base et l’animation d’élimination par les flammes sont incluses. Le son, le déroulement des manches et la transmission des maladies entre joueurs restent à traduire. La fenêtre utilise une graine fixe et n’a pas encore été comparée à une trace Amiga.
+Les collisions de poussée de base et l’animation d’élimination par les flammes sont incluses. La transmission des maladies entre joueurs reste à traduire.
 
 ## Bonus et déplacements spéciaux des bombes
 
@@ -62,3 +62,14 @@ Les bombes poussées testent les deux sous-cellules de l’avant. Elles se tél�
 Les flammes font jouer l’animation de destruction d’un bonus visible. La destruction d’un mur révèle son bonus caché, s’il en contenait un. Les effets à la prise sont branchés sur les 23 identifiants de la table Amiga. Ils comprennent les changements de capacité, de portée, de vitesse et de mèche, les commandes inversées, le gel, l’horloge, le rebond, l’invincibilité et l’ambulance. Les temporisations reprennent l’ordre de `TestMalad`. Les effets sonores, la barre d’état et la transmission par contact restent à intégrer. En cas de choc simultané contre deux bombes différentes, le C++ traite les deux cibles par identifiant. Cette situation et le reste du comportement n’ont pas encore été comparés à des traces Amiga.
 
 Pour lancer le niveau original **Bump Alert** depuis le ZIP Windows, ouvrir un terminal dans le dossier extrait et exécuter `legoblast_players.exe 314`. Ce niveau contient des téléporteurs, autorise la poussée et peut révéler le bonus de rebond sous les murs.
+
+
+## Jouer un match complet en cinq victoires
+
+Le premier joueur à apparaître lance le compte à rebours. La première élimination ou l'alerte à dix secondes ferme les inscriptions. Le terrain se referme en spirale lorsque le délai d'alerte expire. Quand le temps total s'écoule, les bombes actives sont déclenchées. La manche attend la fin des bombes, des flammes et des animations avant d'afficher le résultat. Une victoire rapporte un point lorsqu'au moins deux joueurs ont participé.
+
+Feu passe à la manche suivante après le résultat et fait apparaître le joueur avec son périphérique précédent. Pour essayer à deux sur le même clavier, utiliser **W**, **R**, **3** ou **4**, **E** et **Espace** pour le clavier 2, puis **7**, **9**, **{** et **8** sur le pavé numérique et **flèche droite** pour le clavier 3. **P** met le jeu en pause. **F5** recommence le match.
+
+Le moteur avance par pas de 20 ms. `legoblast_session_checks` vérifie cinq victoires consécutives, le match nul, la conservation des commandes, la pause, le départ différé du chronomètre, le premier bloc de la spirale et la résolution du temps écoulé avec une bombe active. Le workflow Windows lance également l'exécutable emballé avec `--smoke` et vérifie le passage entre deux manches au niveau 001.
+
+La barre de score est provisoire. La validation image par image sur Amiga, les animations de résultat, le podium et le son restent à intégrer.

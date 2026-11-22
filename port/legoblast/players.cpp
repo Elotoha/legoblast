@@ -247,8 +247,8 @@ void Players::prepare(const Level& level, bool newLevel, bool dynaLevel) {
         player.animationTicks = old.animationTicks;
         player.repeatFire = old.repeatFire;
         player.canPush = old.canPush;
-        player.noMoveDeaths = old.noMoveDeaths;
-        player.dead = old.dead && old.noMoveDeaths > 1;
+        player.noMoveDeaths = newLevel ? 0 : old.noMoveDeaths;
+        player.dead = !newLevel && old.dead && old.noMoveDeaths > 1;
         player.sprite = {word(BaseX + level.starts[i].x * 16), word(BaseY + level.starts[i].y * 16)};
         player.speed = word(level.speed);
         player.bombCapacity = level.bombs;
@@ -269,7 +269,9 @@ void Players::join(const Controls& controls) {
     for (std::size_t i = 0; i < controls.size(); ++i) {
         if (locked_[i] || !controls[i].fire)
             continue;
-        auto free = std::ranges::find(players_, -1, &Player::control);
+        auto free = std::ranges::find_if(players_, [](const auto& player) {
+            return player.control < 0 && !player.dead;
+        });
         if (free == players_.end())
             return;
         free->control = static_cast<int>(i);
@@ -280,6 +282,14 @@ void Players::join(const Controls& controls) {
         if (i == keyboard2 || i == keyboard3)
             locked_[keyboard1] = true;
     }
+}
+
+void Players::eliminateAbsent() {
+    for (auto& player : players_)
+        if (player.activation == Activation::Hidden) {
+            player.dead = true;
+            player.noMoveDeaths = 20;
+        }
 }
 
 void Players::show(Player& player, PlayerTick& timing) {

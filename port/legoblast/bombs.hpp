@@ -35,6 +35,9 @@ public:
     bool plant(unsigned owner, Point center, PlayerMap& map, const BombSettings& settings);
     unsigned collectBonus(Point cell, PlayerMap& map);
     void detonateAll();
+    void thaw();
+    bool settled() const;
+    void placeClosingBlock(Point tile, PlayerMap& map);
     void freeze();
     void releaseClock(unsigned owner);
     void scatter(PlayerMap& map);

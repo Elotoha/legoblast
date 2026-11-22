@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 project(legoblast_source_port LANGUAGES CXX)
 
-add_library(legoblast_source level.cpp players.cpp sprite.cpp bombs.cpp)
+add_library(legoblast_source level.cpp players.cpp sprite.cpp bombs.cpp session.cpp)
 target_compile_features(legoblast_source PUBLIC cxx_std_20)
 target_include_directories(legoblast_source PUBLIC .)
 add_executable(legoblast_levels main.cpp)
@@ -16,6 +16,9 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(legoblast_session_checks session_checks.cpp)
+  target_link_libraries(legoblast_session_checks PRIVATE legoblast_source)
+  add_test(NAME source_session COMMAND legoblast_session_checks)
   add_executable(legoblast_bomb_checks bomb_checks.cpp)
   target_link_libraries(legoblast_bomb_checks PRIVATE legoblast_source)
   add_test(NAME source_bombs COMMAND legoblast_bomb_checks)
