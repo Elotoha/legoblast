@@ -38,14 +38,14 @@ def render_music(module, destination, channel_options):
 
 def export_menu_voices(source, destination):
     module = source / "mods" / "Mod_Menu.P6"
-    for voice in range(1, 5):
-        render_music(module, destination / f"Mod_Menu_Voice{voice}.flac", ["-S", str(voice)])
+    for channel in range(4):
+        render_music(module, destination / f"Mod_Menu_Voice{channel + 1}.flac", ["-S", str(channel)])
 
 
 def export_music(source, destination):
     for module in sorted((source / "mods").glob("Mod_*.P6")):
-        # LaunchZik plays three voices in-game and reserves channel 3 for effects.
-        channels = ["-M", "4"] if "Game" in module.stem else []
+        # LaunchZik reserves Paula channel 3 for effects. xmp uses zero-based channels.
+        channels = ["-M", "3"] if "Game" in module.stem else []
         render_music(module, destination / f"{module.stem}.flac", channels)
     export_menu_voices(source, destination)
 
