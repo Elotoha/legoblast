@@ -53,7 +53,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory package/data/binary, package/data/LEGO_WORLDS | Out-Null
-          Copy-Item build/Release/legoblast_players.exe package/
+          Copy-Item build/Release/legoblast_players.exe, build/Release/legoblast_lab.exe package/
+          Copy-Item port/legoblast/lia_lab package/lia_lab -Recurse
           Copy-Item port/legoblast/README.md package/
           Copy-Item amiga/src/binary/Lego_Level*.dat, amiga/src/binary/Lego_Flam_*.Dat package/data/binary/
           Copy-Item amiga/src/binary/Lego_Blocs.dat, amiga/src/binary/bobs_nus22.col, amiga/src/binary/Lego_Sprites.col, amiga/src/binary/Lego_SpritesIndex.dat package/data/binary/
@@ -72,6 +73,8 @@ jobs:
           $env:SDL_RENDER_DRIVER = 'software'
           $env:SDL_AUDIODRIVER = 'dummy'
           & .\package\legoblast_players.exe --smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & .\package\legoblast_lab.exe duel .\package\data\binary\Lego_Level001.dat lia micro 1 10 1000
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         with:

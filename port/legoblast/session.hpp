@@ -4,6 +4,7 @@
 #include "players.hpp"
 
 #include <algorithm>
+#include <memory>
 
 namespace legoblast {
 enum class RoundPhase { AwaitingPlayers, Running, Draining, Result, MatchComplete, Podium, Statistics };
@@ -23,8 +24,8 @@ class Session {
 public:
     explicit Session(Level level, MatchOptions options = {});
     Session(std::vector<Level> levels, std::size_t startingArena, MatchOptions options);
-    void tick(const Controls& input);
-    void resetMatch();
+    void tick(const Controls& input, bool automaticMicro = true);
+    void resetMatch(RandomState random = {});
     void togglePause();
     void previousArena();
     void nextArena();
@@ -70,7 +71,7 @@ private:
     void closeEntries();
     static std::vector<Point> fillOrder(const Level& level);
 
-    std::vector<Level> arenas_;
+    std::shared_ptr<const std::vector<Level>> arenas_;
     std::size_t firstArena_{}, arenaIndex_{}, previousArena_{};
     Level level_;
     MatchOptions options_;

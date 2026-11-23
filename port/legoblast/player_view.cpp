@@ -1,4 +1,5 @@
 #include "hud.hpp"
+#include "lia.hpp"
 #include "screens.hpp"
 #include "sound_output.hpp"
 #include "sprite.hpp"
@@ -73,6 +74,7 @@ public:
             down(SDL_SCANCODE_KP_5) || down(SDL_SCANCODE_KP_RIGHTBRACE) || down(SDL_SCANCODE_RIGHTBRACKET),
             down(SDL_SCANCODE_KP_8), shared && down(SDL_SCANCODE_RIGHT)};
         input[static_cast<std::size_t>(Control::Micro)].fire = down(SDL_SCANCODE_BACKSPACE);
+        input[static_cast<std::size_t>(Control::Lia)].fire = down(SDL_SCANCODE_L);
         pressed_.fill(false);
         return input;
     }
@@ -103,6 +105,13 @@ void verifyKeyboardMapping(const Session& session) {
     if (!keyboard.read(session, false)[static_cast<std::size_t>(Control::Keyboard1)].up ||
         keyboard.read(session, false)[static_cast<std::size_t>(Control::Keyboard1)].up)
         throw std::runtime_error("short arrow press was lost or repeated");
+    key.type = SDL_EVENT_KEY_DOWN;
+    key.key.scancode = SDL_SCANCODE_L;
+    keyboard.update(key);
+    const auto lia = keyboard.read(session, false);
+    if (!lia[static_cast<std::size_t>(Control::Lia)].fire ||
+        lia[static_cast<std::size_t>(Control::Micro)].fire)
+        throw std::runtime_error("Lia lost its separate join key");
 }
 
 class Gamepads {
@@ -192,7 +201,8 @@ Session makeSession(const std::filesystem::path& binary, const std::filesystem::
 
 ViewResult view(const std::filesystem::path& root, const std::filesystem::path& spriteFile,
          const std::filesystem::path& levelFile, bool smoke, MatchOptions options, Preferences& prefs, SoundOutput& sound,
-         const std::vector<ArenaEntry>& arenaList, bool useMenu = false, bool sharedKeyboard = false) {
+         const std::vector<ArenaEntry>& arenaList, const LiaModel* liaModel,
+         bool useMenu = false, bool sharedKeyboard = false) {
     const auto binary = root / "binary";
     auto session = makeSession(binary, levelFile, options, arenaList);
     const auto& level = session.arena();
@@ -232,6 +242,9 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
         menus.render(15);
     }
     unsigned smokeFrame = 0;
+    Lia lia;
+    unsigned liaAction{}, liaTick{LiaActionTicks}, previousLiaTick{}, liaRound{};
+    constexpr auto liaControl = static_cast<std::size_t>(Control::Lia);
 
     Gamepads pads;
     Keyboard keyboard;
@@ -339,6 +352,27 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
         for (; elapsed >= 20; elapsed -= 20) {
             auto input = keyboard.read(session, sharedKeyboard);
             pads.read(input);
+            if (!session.paused() && liaPlaying(session)) {
+                const auto& slots = session.players();
+                const auto bot = std::ranges::find(slots, static_cast<int>(Control::Lia), &Player::control);
+                if (bot == slots.end() && input[liaControl].fire) {
+                    shortcutMessage = "LIA";
+                    messageUntil = SDL_GetTicks() + 2000;
+                }
+                if (bot != slots.end() && liaAlive(*bot)) {
+                    if (liaRound != session.roundNumber() || session.elapsed() < previousLiaTick) {
+                        lia.reset();
+                        liaRound = session.roundNumber();
+                        liaTick = LiaActionTicks;
+                    }
+                    if (liaTick >= LiaActionTicks) {
+                        liaAction = lia.choose(session, bot - slots.begin(), liaModel);
+                        liaTick = 0;
+                    }
+                    input[liaControl] = liaButtons(liaAction, liaTick++);
+                    previousLiaTick = session.elapsed();
+                }
+            }
             if (smoke) {
                 input = {};
                 ++smokeFrame;
@@ -575,7 +609,7 @@ MenuResult choose(Menus& menus, const ExtraScreens& extra, SoundOutput& soundtra
 }
 
 int launch(const std::filesystem::path& root, const std::filesystem::path& sprites,
-           const std::filesystem::path& level, bool smoke, MatchOptions options, std::optional<unsigned> track, bool useMenu) {
+           const std::filesystem::path& level, bool smoke, MatchOptions options, std::optional<unsigned> track, bool useMenu, const LiaModel* liaModel) {
     check(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD));
     auto arenas = loadArenaList(root / "binary");
     const auto audio = root / "audio";
@@ -594,14 +628,14 @@ int launch(const std::filesystem::path& root, const std::filesystem::path& sprit
                       useMenu ? 9 : prefs.music, smoke);
     sound.setVolumes(prefs.musicVolume, prefs.effectsVolume);
     if (!useMenu) {
-        view(root, sprites, level, smoke, options, prefs, sound, arenas);
+        view(root, sprites, level, smoke, options, prefs, sound, arenas, liaModel);
         return 0;
     }
     Menus menus(sprites.parent_path(), arenas, prefs);
     const ExtraScreens extra(sprites.parent_path(), prefs.gradient);
     bool intro = true;
     while (choose(menus, extra, sound, std::exchange(intro, false)) == MenuResult::Start)
-        if (view(root, sprites, menus.levelFile(), false, menus.options(), prefs, sound, arenas, true,
+        if (view(root, sprites, menus.levelFile(), false, menus.options(), prefs, sound, arenas, liaModel, true,
                  menus.sharedKeyboard()) == ViewResult::Closed)
             break;
     if (!settings.empty()) {
@@ -623,6 +657,7 @@ int main(int argc, char* argv[]) {
         bool smoke = false;
         bool useMenu = argc == 1;
         std::optional<unsigned> track;
+        std::optional<LiaModel> liaModel;
         std::vector<std::string_view> paths;
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg = argv[i];
@@ -634,6 +669,8 @@ int main(int argc, char* argv[]) {
             else if (arg == "--dyna") options.arena = ArenaMode::Dynablaster;
             else if (arg == "--smoke") smoke = true;
             else if (arg == "--menu") useMenu = true;
+            else if (arg.starts_with("--lia-model="))
+                liaModel.emplace(std::filesystem::path(arg.substr(12)));
             else if (arg.starts_with("--music=")) {
                 const auto value = arg.substr(8);
                 if (value.size() != 1 || value[0] < '0' || value[0] > '4')
@@ -654,12 +691,12 @@ int main(int argc, char* argv[]) {
             const std::filesystem::path root = std::filesystem::path(reinterpret_cast<const char8_t*>(base)) / "data";
             return launch(root, root / "binary/LEGO_SPRITES.DAT",
                           root / "binary" / ("Lego_Level" + std::string(number) + ".dat"),
-                          smoke, options, track, useMenu && !smoke);
+                          smoke, options, track, useMenu && !smoke, liaModel ? &*liaModel : nullptr);
         }
         if (paths.size() != 3)
             throw std::runtime_error("usage: legoblast_players [LEVEL | AMIGA_SRC SPRITES LEVEL.dat] "
-                                     "[--free] [--teams | --survivor] [--sequential | --random | --dyna]");
-        return launch(paths[0], paths[1], paths[2], smoke, options, track, useMenu && !smoke);
+                                     "[--free] [--teams | --survivor] [--sequential | --random | --dyna] [--lia-model=FILE]");
+        return launch(paths[0], paths[1], paths[2], smoke, options, track, useMenu && !smoke, liaModel ? &*liaModel : nullptr);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

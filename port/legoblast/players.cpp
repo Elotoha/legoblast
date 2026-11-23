@@ -568,7 +568,7 @@ void Players::applyBonus(Player& player, unsigned number, PlayerTick& timing, Bo
     }
 }
 
-void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map, BombField* bombs) {
+void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map, BombField* bombs, bool automaticMicro) {
     if (!timing.winnersPhase)
         transferOnContact(players_);
     join(controls);
@@ -605,7 +605,7 @@ void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map,
         }
 
         player.canBeBumped = true;
-        if (isMicro && bombs)
+        if (isMicro && bombs && automaticMicro)
             input = micro_.route(player, map, *bombs);
         auto step = movement(input, player.speed);
         const unsigned owner = static_cast<unsigned>(&player - players_.data());

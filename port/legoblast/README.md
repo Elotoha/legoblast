@@ -56,6 +56,7 @@ Le ZIP Windows x64 est produit par le workflow [Joueurs LegoBlast Windows](https
 | **Début** ou **Aide** | Rejoue l’arène. En Dynablaster, génère un nouveau labyrinthe. |
 | **P**, **Échap** | Pause ou retour au menu. En lancement direct, Échap ferme le jeu. |
 | **Retour arrière** | Fait rejoindre Micro, le joueur contrôlé par l’ordinateur. |
+| **L** | Fait rejoindre Lia, l’adversaire qui simule les actions plusieurs VBL à l’avance. |
 | `\` | Affiche le podium intermédiaire en début de manche ou après un résultat. |
 | **+**, **−** | Volume de la musique. |
 | `/`, `*` au pavé numérique | Volume des effets. |
@@ -132,3 +133,7 @@ Micro reprend le routage par cases de `Micro.i`, ses directions prioritaires, le
 SDL demande désormais les échantillons au mixeur lorsqu’il en a besoin. Le périphérique reste ouvert entre le menu et les manches, et le décodage FLAC se fait hors du verrou audio. Le test du paquet suspend le jeu pendant la production d’au moins 200 ms de PCM, avant et après un changement de piste.
 
 La comparaison VBL par VBL, le mixage Paula et les points de boucle d’origine restent à mesurer sur les binaires Amiga. Le test audio utilise le périphérique SDL factice. L’écoute sur un périphérique Windows est à vérifier pendant l’essai manuel.
+
+## Lia et le laboratoire
+
+Le [guide du laboratoire](lia_lab/README.md) décrit les duels sans fenêtre, l’entraînement PPO hors ligne et le chargement des modèles par le jeu.

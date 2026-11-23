@@ -10,7 +10,7 @@ namespace legoblast {
 class BombField;
 inline constexpr std::size_t PlayerCount = 6;
 // JoyList order in lego17.asm. Input is sampled before the VBL player update.
-enum class Control : std::size_t { Joy0, Joy1, Joy3, Joy4, Keyboard1, Keyboard2, Keyboard3, Micro, Count };
+enum class Control : std::size_t { Joy0, Joy1, Joy3, Joy4, Keyboard1, Keyboard2, Keyboard3, Micro, Lia, Count };
 struct Buttons {
     bool left{}, right{}, up{}, down{}, fire{};
 };
@@ -77,7 +77,7 @@ struct Bumper {
 class Players {
 public:
     void prepare(const Level& level, bool newLevel, bool dynaLevel);
-    void tick(const Controls& controls, PlayerTick& timing, PlayerMap& map, BombField* bombs = nullptr);
+    void tick(const Controls& controls, PlayerTick& timing, PlayerMap& map, BombField* bombs = nullptr, bool automaticMicro = true);
     void eliminateAbsent();
     void tickBumpers(PlayerMap& map, std::vector<SoundRequest>& sounds);
     void startResult(bool victory, unsigned& animationIndex);

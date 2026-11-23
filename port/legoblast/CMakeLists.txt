@@ -1,11 +1,14 @@
 cmake_minimum_required(VERSION 3.24)
 project(legoblast_source_port LANGUAGES CXX)
 
-add_library(legoblast_source level.cpp players.cpp sprite.cpp bombs.cpp session.cpp hud.cpp screens.cpp preferences.cpp micro.cpp)
+add_library(legoblast_source level.cpp players.cpp sprite.cpp bombs.cpp session.cpp hud.cpp screens.cpp preferences.cpp micro.cpp lia.cpp)
 target_compile_features(legoblast_source PUBLIC cxx_std_20)
 target_include_directories(legoblast_source PUBLIC .)
 add_executable(legoblast_levels main.cpp)
 target_link_libraries(legoblast_levels PRIVATE legoblast_source)
+
+add_executable(legoblast_lab lab.cpp)
+target_link_libraries(legoblast_lab PRIVATE legoblast_source)
 
 option(LEGOBLAST_PLAYER_VIEW "Build the SDL3 player test window" OFF)
 if(LEGOBLAST_PLAYER_VIEW)
@@ -27,6 +30,9 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(legoblast_lia_checks lia_checks.cpp)
+  target_link_libraries(legoblast_lia_checks PRIVATE legoblast_source)
+  add_test(NAME lia_short_fuse COMMAND legoblast_lia_checks)
   add_executable(legoblast_session_checks session_checks.cpp)
   target_link_libraries(legoblast_session_checks PRIVATE legoblast_source)
   add_test(NAME source_session COMMAND legoblast_session_checks)
