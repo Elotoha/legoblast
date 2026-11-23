@@ -9,6 +9,7 @@ Télécharger **LegoBlast-Android** dans **Actions → LegoBlast Android → Sum
 - **FIRE** fait apparaître le joueur tactile. Relâcher puis appuyer à nouveau pour poser une bombe.
 - **MICRO** fait rejoindre Micro. Chaque appui sur **LIA** ajoute une Lia à une place libre. Une manette reconnue par Android peut aussi rejoindre avec son bouton principal.
 - **PAUSE** suspend ou reprend la partie. **BACK** revient au menu.
+- **RACC.** ouvre les raccourcis de la version Windows. En partie, il donne accès aux arènes, à Rejouer, au podium, aux pistes et aux volumes. Dans le menu, il donne accès aux quatre réglages de voix et aux crédits. Les pistes 5 à 7 restent indisponibles dans les ressources d’origine.
 
 L’APK est signé avec une clé de test. Une mise à jour provenant d’un autre environnement de compilation peut avoir une signature différente. Android demande alors de désinstaller l’ancienne version avant l’installation, ce qui efface ses préférences locales.
 

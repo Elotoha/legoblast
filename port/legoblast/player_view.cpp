@@ -295,7 +295,8 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
     while (running) {
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
-            display.handle(event);
+            if (display.handle(event))
+                continue;
             pads.update(event);
             keyboard.update(event);
             if (event.type == SDL_EVENT_KEY_DOWN && (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_AC_BACK) && !event.key.repeat) {
@@ -486,7 +487,7 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
             const SDL_FRect box{float(BoardX + point.x - 7), float(point.y - 20), SpriteWidth, SpriteHeight};
             check(SDL_RenderTexture(renderer, sprite.get(), nullptr, &box));
         }
-        display.present();
+        display.present(now < messageUntil ? std::string_view(shortcutMessage) : std::string_view{});
         if (smoke && smokeFrame >= 6000)
             throw std::runtime_error("match smoke test did not reach the podium");
         if (!smoke)
@@ -516,7 +517,8 @@ MenuResult choose(Menus& menus, const ExtraScreens& extra, SoundOutput& soundtra
     while (true) {
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
-            display.handle(event);
+            if (display.handle(event))
+                continue;
             pads.update(event);
             if (event.type == SDL_EVENT_QUIT)
                 return MenuResult::Exit;

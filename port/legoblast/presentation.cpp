@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <string>
 
 namespace legoblast {
 namespace {
@@ -39,6 +40,8 @@ Presentation::Presentation(int width, int height) {
 
 void Presentation::configure(int width, int height, bool gameplay) {
     clearTouches();
+    shortcutsOpen_ = false;
+    shortcutFingers_.clear();
     check(SDL_SetRenderViewport(renderer(), nullptr));
     check(SDL_SetRenderLogicalPresentation(renderer(), width + 2 * Gutter, height,
         Touchscreen ? SDL_LOGICAL_PRESENTATION_LETTERBOX : SDL_LOGICAL_PRESENTATION_INTEGER_SCALE));
@@ -63,6 +66,77 @@ void Presentation::configure(int width, int height, bool gameplay) {
         buttons_.push_back({{right + 8, 52, 68, 34}, SDL_SCANCODE_BACKSPACE, "MICRO"});
         buttons_.push_back({{right + 8, 93, 68, 34}, SDL_SCANCODE_L, "LIA"});
     }
+    configureShortcuts(width + 2 * Gutter, height, gameplay);
+}
+
+void Presentation::configureShortcuts(int width, int height, bool gameplay) {
+    shortcutToggle_ = {8, gameplay ? 52.f : 9.f, 68, 34};
+    shortcutPanel_ = {18, 10, width - 36.f, height - 20.f};
+    shortcutButtons_.clear();
+    shortcutButtons_.push_back({{width - 108.f, 19, 80, 30}, SDL_SCANCODE_UNKNOWN, "FERMER"});
+    const auto add = [&](SDL_Scancode key, const char* label, bool keepOpen = false) {
+        const auto tile = shortcutButtons_.size() - 1;
+        const float boxWidth = (shortcutPanel_.w - 40.f) / 4.f;
+        const float left = shortcutPanel_.x + 8.f + (tile % 4) * (boxWidth + 8.f);
+        const float top = 60.f + (tile / 4) * 40.f;
+        shortcutButtons_.push_back({{left, top, boxWidth, 34}, key, label, keepOpen});
+    };
+    if (gameplay) {
+        add(SDL_SCANCODE_F1, "ARENE -");
+        add(SDL_SCANCODE_F2, "ARENE +");
+        add(SDL_SCANCODE_HOME, "REJOUER");
+        add(SDL_SCANCODE_BACKSLASH, "PODIUM");
+        constexpr std::array tracks{"MUSIQUE 1", "MUSIQUE 2", "MUSIQUE 3", "MUSIQUE 4",
+                                    "MUSIQUE 5", "MUSIQUE 6", "MUSIQUE 7", "MUET"};
+        for (std::size_t i = 0; i < tracks.size(); ++i)
+            add(static_cast<SDL_Scancode>(SDL_SCANCODE_F3 + i), tracks[i]);
+        add(SDL_SCANCODE_KP_MINUS, "VOL MUS -", true);
+        add(SDL_SCANCODE_KP_PLUS, "VOL MUS +", true);
+        add(SDL_SCANCODE_KP_DIVIDE, "EFFETS -", true);
+        add(SDL_SCANCODE_KP_MULTIPLY, "EFFETS +", true);
+    } else {
+        add(SDL_SCANCODE_F1, "VOIX 1", true);
+        add(SDL_SCANCODE_F2, "VOIX 2", true);
+        add(SDL_SCANCODE_F3, "VOIX 3", true);
+        add(SDL_SCANCODE_F4, "VOIX 4", true);
+        add(SDL_SCANCODE_SPACE, "CREDITS");
+    }
+}
+
+bool Presentation::handleShortcutTouch(const SDL_TouchFingerEvent& finger, SDL_FPoint point) {
+    const auto id = std::pair{finger.touchID, finger.fingerID};
+    const auto blocked = std::ranges::find(shortcutFingers_, id);
+    if (blocked != shortcutFingers_.end()) {
+        if (finger.type == SDL_EVENT_FINGER_UP || finger.type == SDL_EVENT_FINGER_CANCELED)
+            shortcutFingers_.erase(blocked);
+        return true;
+    }
+    if (finger.type != SDL_EVENT_FINGER_DOWN)
+        return shortcutsOpen_;
+    if (!shortcutsOpen_ && !SDL_PointInRectFloat(&point, &shortcutToggle_))
+        return false;
+
+    shortcutFingers_.push_back(id);
+    if (!shortcutsOpen_) {
+        for (const auto& touch : touches_)
+            shortcutFingers_.emplace_back(touch.device, touch.finger);
+        clearTouches();
+        shortcutsOpen_ = true;
+        return true;
+    }
+    for (const auto& button : shortcutButtons_) {
+        if (!SDL_PointInRectFloat(&point, &button.box))
+            continue;
+        if (button.key != SDL_SCANCODE_UNKNOWN) {
+            key(button.key, true);
+            key(button.key, false);
+        }
+        shortcutsOpen_ = button.keepOpen;
+        return true;
+    }
+    if (!SDL_PointInRectFloat(&point, &shortcutPanel_))
+        shortcutsOpen_ = false;
+    return true;
 }
 
 void Presentation::key(SDL_Scancode code, bool down) {
@@ -99,18 +173,34 @@ SDL_Scancode Presentation::directionAt(SDL_FPoint point, SDL_Scancode previous) 
     return useHorizontal ? TouchKeys[dx < 0 ? 0 : 1] : TouchKeys[dy < 0 ? 2 : 3];
 }
 
-void Presentation::handle(const SDL_Event& event) {
+bool Presentation::handle(const SDL_Event& event) {
     if (!Touchscreen)
-        return;
+        return false;
     if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WILL_ENTER_BACKGROUND) {
         clearTouches();
-        return;
+        shortcutFingers_.clear();
+        shortcutsOpen_ = false;
+        return false;
+    }
+    if (shortcutsOpen_ && event.type == SDL_EVENT_KEY_DOWN &&
+        (event.key.scancode == SDL_SCANCODE_ESCAPE || event.key.key == SDLK_AC_BACK)) {
+        shortcutsOpen_ = false;
+        return true;
     }
 
     const bool release = event.type == SDL_EVENT_FINGER_UP || event.type == SDL_EVENT_FINGER_CANCELED;
     if (!release && event.type != SDL_EVENT_FINGER_DOWN && event.type != SDL_EVENT_FINGER_MOTION)
-        return;
+        return false;
     const auto& finger = event.tfinger;
+    SDL_FPoint point{};
+    if (!release) {
+        SDL_Event converted = event;
+        check(SDL_ConvertEventToRenderCoordinates(renderer(), &converted));
+        point = {converted.tfinger.x, converted.tfinger.y};
+    }
+    if (handleShortcutTouch(finger, point))
+        return true;
+
     auto found = std::ranges::find_if(touches_, [&](const Touch& touch) {
         return finger.touchID == touch.device && finger.fingerID == touch.finger;
     });
@@ -118,9 +208,6 @@ void Presentation::handle(const SDL_Event& event) {
     SDL_Scancode next = SDL_SCANCODE_UNKNOWN;
     bool steering = found != touches_.end() && found->steering;
     if (!release) {
-        SDL_Event converted = event;
-        check(SDL_ConvertEventToRenderCoordinates(renderer(), &converted));
-        const SDL_FPoint point{converted.tfinger.x, converted.tfinger.y};
         if (event.type == SDL_EVENT_FINGER_DOWN && SDL_PointInRectFloat(&point, &steeringArea_))
             steering = std::ranges::none_of(touches_, &Touch::steering);
         if (steering) {
@@ -139,7 +226,7 @@ void Presentation::handle(const SDL_Event& event) {
         }
     }
     if (previous == next && !release && (!steering || found != touches_.end()))
-        return;
+        return false;
     if (found != touches_.end())
         touches_.erase(found);
     if (previous != SDL_SCANCODE_UNKNOWN && !held(previous))
@@ -150,6 +237,7 @@ void Presentation::handle(const SDL_Event& event) {
         if (next != SDL_SCANCODE_UNKNOWN && !alreadyHeld)
             key(next, true);
     }
+    return false;
 }
 
 void Presentation::beginFrame() {
@@ -158,12 +246,8 @@ void Presentation::beginFrame() {
     check(SDL_SetRenderViewport(renderer(), &viewport_));
 }
 
-void Presentation::drawControls() {
-    if (steeringArea_.w) {
-        check(SDL_SetRenderDrawColor(renderer(), 24, 32, 45, 255));
-        check(SDL_RenderFillRect(renderer(), &steeringArea_));
-    }
-    for (const auto& button : buttons_) {
+void Presentation::drawButtons(std::span<const Button> buttons) {
+    for (const auto& button : buttons) {
         const bool pressed = held(button.key);
         check(SDL_SetRenderDrawColor(renderer(), pressed ? 107 : 41, pressed ? 78 : 50, pressed ? 46 : 67, 255));
         check(SDL_RenderFillRect(renderer(), &button.box));
@@ -175,9 +259,31 @@ void Presentation::drawControls() {
     }
 }
 
-void Presentation::present() {
+void Presentation::drawControls(std::string_view status) {
+    if (shortcutsOpen_) {
+        check(SDL_SetRenderDrawColor(renderer(), 20, 27, 39, 255));
+        check(SDL_RenderFillRect(renderer(), &shortcutPanel_));
+        check(SDL_SetRenderDrawColor(renderer(), 220, 226, 233, 255));
+        check(SDL_RenderRect(renderer(), &shortcutPanel_));
+        check(SDL_RenderDebugText(renderer(), shortcutPanel_.x + 8, 28, "RACCOURCIS"));
+        if (!status.empty())
+            check(SDL_RenderDebugText(renderer(), shortcutPanel_.x + 8, 226, std::string(status).c_str()));
+        drawButtons(shortcutButtons_);
+        return;
+    }
+    if (steeringArea_.w) {
+        check(SDL_SetRenderDrawColor(renderer(), 24, 32, 45, 255));
+        check(SDL_RenderFillRect(renderer(), &steeringArea_));
+    }
+    drawButtons(buttons_);
+    const Button toggle{shortcutToggle_, SDL_SCANCODE_UNKNOWN, "RACC."};
+    drawButtons(std::span(&toggle, 1));
+}
+
+void Presentation::present(std::string_view status) {
     check(SDL_SetRenderViewport(renderer(), nullptr));
-    drawControls();
+    if (Touchscreen)
+        drawControls(status);
     check(SDL_RenderPresent(renderer()));
 }
 }
