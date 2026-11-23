@@ -47,6 +47,7 @@ public:
     const auto& brokenBlocks() const { return broken_; }
     const Level& level() const { return level_; }
     RandomState randomState() const { return random_; }
+    bool randomTest(std::int32_t threshold) { return random_.test(threshold) != 0; }
     std::uint8_t flameMask(int x, int y) const;
     auto& sounds() { return sounds_; }
 

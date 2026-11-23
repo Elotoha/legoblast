@@ -263,6 +263,9 @@ void Players::prepare(const Level& level, bool newLevel, bool dynaLevel) {
         player = {};
         player.control = old.control;
         player.roundsPlayed = old.roundsPlayed;
+        player.completedRounds = old.completedRounds;
+        player.deaths = old.deaths;
+        player.victories = old.victories;
         player.bombsPlanted = old.bombsPlanted;
         player.bonusesTaken = old.bonusesTaken;
         player.animationTicks = old.animationTicks;
@@ -363,6 +366,13 @@ void Players::startResult(bool victory, unsigned& animationIndex) {
         return player.activation != Activation::Hidden && !player.dead;
     });
     for (auto& player : players_) {
+        if (player.activation != Activation::Hidden) {
+            ++player.completedRounds;
+            if (player.deathFrame)
+                ++player.deaths;
+            else if (victory && !player.dead)
+                ++player.victories;
+        }
         player.visible = player.activation != Activation::Hidden && !player.dead;
         if (!player.visible)
             continue;
@@ -558,7 +568,7 @@ void Players::applyBonus(Player& player, unsigned number, PlayerTick& timing, Bo
     }
 }
 
-void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map, BombField* bombs) {
+void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map, BombField* bombs, bool automaticMicro) {
     if (!timing.winnersPhase)
         transferOnContact(players_);
     join(controls);
@@ -570,10 +580,11 @@ void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map,
             continue;
         if (player.control < 0)
             continue;
-        const auto& input = controls[player.control];
+        auto input = controls[player.control];
+        const bool isMicro = player.control == static_cast<int>(Control::Micro);
         if (player.activation == Activation::Hidden) {
             const bool request = player.fireRequest > 0 && --player.fireRequest == 0;
-            if (input.fire || request)
+            if (input.fire || request || (isMicro && timing.levelTimerRunning))
                 show(player, timing);
             continue;
         }
@@ -594,6 +605,8 @@ void Players::tick(const Controls& controls, PlayerTick& timing, PlayerMap& map,
         }
 
         player.canBeBumped = true;
+        if (isMicro && bombs && automaticMicro)
+            input = micro_.route(player, map, *bombs);
         auto step = movement(input, player.speed);
         const unsigned owner = static_cast<unsigned>(&player - players_.data());
         const bool heldFire = player.autoFire || player.effects[0] || player.clock;

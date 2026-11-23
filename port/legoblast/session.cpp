@@ -29,15 +29,15 @@ Session::Session(Level level, MatchOptions options)
     : Session(std::vector<Level>{std::move(level)}, 0, options) {}
 
 Session::Session(std::vector<Level> levels, std::size_t startingArena, MatchOptions options)
-    : arenas_(std::move(levels)), firstArena_(startingArena), arenaIndex_(startingArena),
-      level_(arenas_.at(startingArena)), options_(options), map_(level_), bombs_(level_) {
+    : arenas_(std::make_shared<const std::vector<Level>>(std::move(levels))), firstArena_(startingArena), arenaIndex_(startingArena),
+      level_(arenas_->at(startingArena)), options_(options), map_(level_), bombs_(level_) {
     resetMatch();
 }
 
 void Session::startRound(RandomState random, bool newRound) {
     const bool dyna = options_.arena == ArenaMode::Dynablaster;
     if (newRound || dyna)
-        level_ = arenas_[arenaIndex_];
+        level_ = (*arenas_)[arenaIndex_];
     if (dyna)
         dynaInit(level_, random);
     if (newRound)
@@ -58,18 +58,19 @@ void Session::startRound(RandomState random, bool newRound) {
     nextClosing_ = closingDelay_ = resultDelay_ = appeared_ = 0;
     retrying_ = !newRound;
     arenasFinished_ = false;
+    reviewing_ = false;
     paused_ = alert_ = entriesClosed_ = false;
     phase_ = RoundPhase::AwaitingPlayers;
 }
 
-void Session::resetMatch() {
+void Session::resetMatch(RandomState random) {
     players_ = Players{};
     sounds_.clear();
     score_.fill(0);
     roundNumber_ = 0;
     arenaIndex_ = firstArena_;
     previousArena_ = firstArena_;
-    startRound({});
+    startRound(random);
 }
 
 void Session::togglePause() {
@@ -80,6 +81,29 @@ void Session::togglePause() {
 
 bool Session::canChangeArena() const {
     return !paused_ && phase_ != RoundPhase::Podium && phase_ != RoundPhase::Statistics;
+}
+
+void Session::startPodium() {
+    phase_ = RoundPhase::Podium;
+    podiumTime_ = cameraTime_ = 0;
+    awaitingRelease_ = true;
+    sounds_.push_back({SoundCue::MatchVictory, 41, 3});
+    sounds_.push_back({SoundCue::Victory, 40});
+}
+
+bool Session::reviewPodium() {
+    if (paused_ || (phase_ != RoundPhase::Result && phase_ != RoundPhase::AwaitingPlayers) ||
+        std::ranges::none_of(players_.slots(), &Player::completedRounds))
+        return false;
+    reviewing_ = true;
+    startPodium();
+    return true;
+}
+
+void Session::skipPodium() {
+    phase_ = RoundPhase::Statistics;
+    podiumTime_ = std::max(podiumTime_, 100u);
+    awaitingRelease_ = true;
 }
 
 void Session::replayArena() {
@@ -109,7 +133,7 @@ void Session::nextArena() {
         auto random = bombs_.randomState();
         drawRandomArena(random);
         startRound(random);
-    } else if (arenaIndex_ + 1 < arenas_.size()) {
+    } else if (arenaIndex_ + 1 < arenas_->size()) {
         ++arenaIndex_;
         replayArena();
     }
@@ -140,7 +164,7 @@ void Session::tickClock() {
         tickClosing();
 }
 
-void Session::tick(const Controls& input) {
+void Session::tick(const Controls& input, bool automaticMicro) {
     sounds_.clear();
     if (paused_)
         return;
@@ -152,8 +176,12 @@ void Session::tick(const Controls& input) {
             phase_ = RoundPhase::Statistics;
             awaitingRelease_ = true;
         } else if (!awaitingRelease_ && hasFire(input)) {
-            if (phase_ == RoundPhase::Statistics)
-                resetMatch();
+            if (phase_ == RoundPhase::Statistics) {
+                if (reviewing_)
+                    startRound(bombs_.randomState());
+                else
+                    resetMatch();
+            }
             else if (!cameraTime_ && podiumTime_ >= PodiumFadeIn) {
                 cameraTime_ = podiumTime_;
                 sounds_.push_back({SoundCue::Camera, 42});
@@ -171,11 +199,7 @@ void Session::tick(const Controls& input) {
             } else if (arenasFinished_) {
                 resetMatch();
             } else {
-                phase_ = RoundPhase::Podium;
-                podiumTime_ = cameraTime_ = 0;
-                awaitingRelease_ = true;
-                sounds_.push_back({SoundCue::MatchVictory, 41, 3});
-                sounds_.push_back({SoundCue::Victory, 40});
+                startPodium();
             }
         }
         return;
@@ -192,7 +216,7 @@ void Session::tick(const Controls& input) {
         players_.tickBumpers(map_, sounds_);
     const auto previousSlots = players_.slots();
     timing_.sounds.clear();
-    players_.tick(input, timing_, map_, &bombs_);
+    players_.tick(input, timing_, map_, &bombs_, automaticMicro);
     sounds_.insert(sounds_.end(), timing_.sounds.begin(), timing_.sounds.end());
     if (timing_.levelTimerRunning && phase_ == RoundPhase::AwaitingPlayers)
         phase_ = RoundPhase::Running;
@@ -252,7 +276,7 @@ void Session::advanceArena() {
 
 void Session::drawRandomArena(RandomState& random) {
     previousArena_ = arenaIndex_;
-    arenaIndex_ = (random.next() & 0xfff) % arenas_.size();
+    arenaIndex_ = (random.next() & 0xfff) % arenas_->size();
 }
 
 void Session::endRound() {
@@ -278,7 +302,7 @@ void Session::endRound() {
     sounds_.push_back({winner ? SoundCue::Victory : SoundCue::Draw, 40});
     const bool matchComplete = (options_.teams || options_.fiveWins) &&
         std::ranges::any_of(score_, [](auto score) { return score >= Wins; });
-    arenasFinished_ = !matchComplete && options_.arena == ArenaMode::Sequential && arenaIndex_ + 1 == arenas_.size();
+    arenasFinished_ = !matchComplete && options_.arena == ArenaMode::Sequential && arenaIndex_ + 1 == arenas_->size();
     phase_ = matchComplete || arenasFinished_ ? RoundPhase::MatchComplete : RoundPhase::Result;
     resultDelay_ = ResultDelay;
 }

@@ -1,0 +1,75 @@
+name: LegoBlast Android
+
+on:
+  push:
+    paths:
+      - 'port/android/**'
+      - 'port/legoblast/**'
+      - 'port/src/audio*'
+      - 'port/src/assets.hpp'
+      - 'amiga/release_aminet/LegoBlast.lha'
+      - '.github/workflows/legoblast-android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /.github/workflows/legoblast-android.yml
+            /port/android/
+            /port/legoblast/
+            /port/src/audio*.cpp
+            /port/src/audio*.hpp
+            /port/src/assets.hpp
+            /amiga/release_aminet/LegoBlast.lha
+            /amiga/src/LegoBlast.Prefs
+            /amiga/src/LEGO_WORLDS/*.col
+            /amiga/src/binary/
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Préparer le SDK et les ressources
+        run: |
+          sdk_manager=$(command -v sdkmanager || find "$ANDROID_HOME/cmdline-tools" -path '*/bin/sdkmanager' -print -quit)
+          "$sdk_manager" 'platforms;android-35' 'build-tools;35.0.0' 'ndk;28.2.13676358' 'cmake;3.31.6'
+          sudo apt-get update
+          sudo apt-get install -y lhasa
+          python3 port/android/prepare.py
+      - name: Tester le moteur C++
+        run: |
+          cmake -S port/legoblast -B build/engine -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/engine --parallel
+          ctest --test-dir build/engine --output-on-failure
+      - name: Compiler et vérifier l’APK signé
+        run: |
+          gradle -p port/android --no-daemon :app:assembleDebug
+          cp port/android/app/build/outputs/apk/debug/app-debug.apk LegoBlast-Android.apk
+          "${ANDROID_HOME}/build-tools/35.0.0/apksigner" verify --verbose LegoBlast-Android.apk
+          python3 - <<'PY'
+          from zipfile import ZipFile
+
+          with ZipFile("LegoBlast-Android.apk") as apk:
+              assert apk.testzip() is None
+              for abi in ("arm64-v8a", "x86_64"):
+                  for library in ("libSDL3.so", "liblegoblast_players.so"):
+                      assert apk.read(f"lib/{abi}/{library}").startswith(b"\x7fELF")
+              for asset in ("binary/LEGO_SPRITES.DAT", "binary/Lego_Level001.dat",
+                            "audio/Mod_Game1.flac", "audio/sample-00.wav"):
+                  assert apk.getinfo(f"assets/data/{asset}").file_size > 0
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LegoBlast-Android
+          path: LegoBlast-Android.apk
+          if-no-files-found: error
