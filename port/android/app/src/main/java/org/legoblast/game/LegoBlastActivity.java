@@ -34,6 +34,12 @@ public final class LegoBlastActivity extends SDLActivity {
         super.main();
     }
 
+    public GameSocket openGameSocket(String address) {
+        GameSocket socket = new GameSocket(address);
+        socket.connect();
+        return socket;
+    }
+
     private void installAssets() throws IOException {
         byte[] id;
         try (InputStream bundledId = getAssets().open("data.id")) {

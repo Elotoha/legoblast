@@ -137,3 +137,7 @@ La comparaison VBL par VBL, le mixage Paula et les points de boucle d’origine 
 ## Lia et le laboratoire
 
 Le [guide du laboratoire](lia_lab/README.md) décrit les duels sans fenêtre, l’entraînement PPO hors ligne et le chargement des modèles par le jeu.
+
+## Jeu en réseau
+
+Ouvre **RESEAU** ou appuie sur **F11** dans le menu. Active les invitations, puis crée un salon ou accepte une invitation. Les humains, Lia et Micro occupent chacun une place. La partie démarre à quatre.

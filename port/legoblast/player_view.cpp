@@ -1,6 +1,7 @@
 #include "hud.hpp"
 #include "lia.hpp"
 #include "presentation.hpp"
+#include "network_panel.hpp"
 #include "screens.hpp"
 #include "sound_output.hpp"
 #include "sprite.hpp"
@@ -27,7 +28,7 @@ constexpr int BoardHeight = Height * TileSize;
 constexpr int ScreenWidth = Hud::Width / 2;
 constexpr int ScreenHeight = BoardHeight + Hud::Height;
 constexpr int BoardX = (ScreenWidth - BoardWidth) / 2;
-enum class ViewResult { Closed, MainMenu };
+enum class ViewResult { Closed, MainMenu, Network };
 
 void check(bool success) {
     if (!success)
@@ -221,10 +222,74 @@ Session makeSession(const std::filesystem::path& binary, const std::filesystem::
     return Session(std::move(levels), startingIndex, options);
 }
 
+std::string_view matchShortcut(SDL_Scancode key) {
+    constexpr std::array music{"M1", "M2", "M3", "M4", "M5", "M6", "M7", "M0"};
+    if (key >= SDL_SCANCODE_F3 && key <= SDL_SCANCODE_F10)
+        return music[key - SDL_SCANCODE_F3];
+    switch (key) {
+    case SDL_SCANCODE_F1: return "PREV";
+    case SDL_SCANCODE_F2: return "NEXT";
+    case SDL_SCANCODE_HOME:
+    case SDL_SCANCODE_HELP: return "REPLAY";
+    case SDL_SCANCODE_P: return "PAUSE";
+    case SDL_SCANCODE_BACKSLASH:
+    case SDL_SCANCODE_NONUSBACKSLASH: return "PODIUM";
+    default: return {};
+    }
+}
+
+bool adjustVolume(SDL_Scancode key, Preferences& prefs, SoundOutput& sound, std::string& message) {
+    auto music = static_cast<int>(prefs.musicVolume);
+    auto effects = static_cast<int>(prefs.effectsVolume);
+    switch (key) {
+    case SDL_SCANCODE_MINUS:
+    case SDL_SCANCODE_KP_MINUS: --music; break;
+    case SDL_SCANCODE_EQUALS:
+    case SDL_SCANCODE_KP_PLUS: ++music; break;
+    case SDL_SCANCODE_KP_DIVIDE: --effects; break;
+    case SDL_SCANCODE_KP_MULTIPLY: ++effects; break;
+    default: return false;
+    }
+    prefs.musicVolume = std::clamp(music, 0, 64);
+    prefs.effectsVolume = std::clamp(effects, 0, 64);
+    sound.setVolumes(prefs.musicVolume, prefs.effectsVolume);
+    message = "MUSIC " + std::to_string(prefs.musicVolume) + "  SOUND " + std::to_string(prefs.effectsVolume);
+    return true;
+}
+
+Buttons networkInput(const Controls& inputs) {
+    unsigned buttons = 0;
+    for (auto control : {Control::Joy0, Control::Joy1, Control::Joy3, Control::Joy4, Control::Keyboard1, Control::Touch})
+        buttons |= packInput(inputs[static_cast<std::size_t>(control)]);
+    return unpackInput(buttons);
+}
+
+void copyNetworkBoard(Bytes& destination, const Bytes& board, const Bytes& bar) {
+    destination.assign(NetPixels, 0);
+    for (int y = 0; y < BoardHeight; ++y)
+        std::copy_n(board.data() + y * BoardWidth * 3, BoardWidth * 3,
+                    destination.data() + (y * NetWidth + BoardX) * 3);
+    const auto sourceWidth = bar.size() / (Hud::Height * 3);
+    for (int y = 0; y < Hud::Height; ++y)
+        for (int x = 0; x < NetWidth; ++x)
+            std::copy_n(bar.data() + (y * sourceWidth + x * sourceWidth / NetWidth) * 3, 3,
+                        destination.data() + ((BoardHeight + y) * NetWidth + x) * 3);
+}
+
+void copyNetworkSprite(Bytes& destination, const Bytes& sprite, Point center) {
+    for (int sy = 0; sy < SpriteHeight; ++sy)
+        for (int sx = 0; sx < SpriteWidth; ++sx) {
+            const auto x = BoardX + center.x - 7 + sx, y = center.y - 20 + sy;
+            const auto pixel = (sy * SpriteWidth + sx) * 4;
+            if (x >= 0 && x < NetWidth && y >= 0 && y < NetHeight && sprite[pixel + 3])
+                std::copy_n(sprite.data() + pixel, 3, destination.data() + (y * NetWidth + x) * 3);
+        }
+}
+
 ViewResult view(const std::filesystem::path& root, const std::filesystem::path& spriteFile,
          const std::filesystem::path& levelFile, bool smoke, MatchOptions options, Preferences& prefs, SoundOutput& sound,
          const std::vector<ArenaEntry>& arenaList, const LiaModel* liaModel, Presentation& display,
-         bool useMenu = false, bool sharedKeyboard = false) {
+         bool useMenu = false, bool sharedKeyboard = false, NetworkPanel* online = nullptr, bool hosting = false) {
     const auto binary = root / "binary";
     auto session = makeSession(binary, levelFile, options, arenaList);
     const auto& level = session.arena();
@@ -265,6 +330,21 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
     }
     unsigned smokeFrame = 0;
     LiaGroup lias;
+    std::array<Lia, NetworkPlaces> networkLias{};
+    std::array<unsigned, NetworkPlaces> botAction{};
+    unsigned botTick{}, botRound{};
+    unsigned microMask = 0;
+    NetFrame networkFrame;
+    networkFrame.track = prefs.music;
+    networkFrame.trackRevision = 1;
+    std::uint64_t musicStart = SDL_GetTicks();
+    std::uint64_t nextBroadcast = 0;
+    bool wasModal = false;
+    if (hosting) {
+        online->link.beginMatch();
+        for (unsigned i = 0; i < NetworkPlaces; ++i)
+            if (online->link.room->roster[i] == 'M') microMask |= 1u << i;
+    }
 
     Gamepads pads;
     Keyboard keyboard;
@@ -291,14 +371,67 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
     Uint64 elapsed = 0;
     Uint64 messageUntil = 0;
     std::string shortcutMessage;
+    const auto apply = [&](std::string_view command) {
+        if (command == "PREV") session.previousArena();
+        else if (command == "NEXT") session.nextArena();
+        else if (command == "REPLAY") session.replayArena();
+        else if (command == "PAUSE") session.togglePause();
+        else if (command == "SKIP" && session.phase() == RoundPhase::Podium) session.skipPodium();
+        else if (command == "PODIUM") {
+            if (session.reviewPodium()) {
+                sound.tick(session.sounds(), false, false, true);
+                if (hosting) networkFrame.sounds.insert(networkFrame.sounds.end(), session.sounds().begin(), session.sounds().end());
+            }
+        } else if (command.size() == 2 && command[0] == 'M' && command[1] >= '0' && command[1] <= '7' &&
+            !session.paused() && session.phase() != RoundPhase::Podium && session.phase() != RoundPhase::Statistics) {
+            const unsigned requested = command[1] - '0';
+            const bool available = sound.selectTrack(requested);
+            if (hosting) {
+                if (networkFrame.track != requested) {
+                    networkFrame.track = requested;
+                    ++networkFrame.trackRevision;
+                    musicStart = SDL_GetTicks();
+                }
+            } else {
+                prefs.music = available ? requested : 0;
+            }
+            shortcutMessage = requested ? "MUSIC " + std::to_string(requested) : "MUSIC OFF";
+            if (!available) shortcutMessage += " UNAVAILABLE";
+            messageUntil = SDL_GetTicks() + 2000;
+        }
+    };
+    const auto broadcast = [&] {
+        networkFrame.flags = unsigned(session.paused()) |
+            unsigned(session.phase() == RoundPhase::Result || session.phase() == RoundPhase::MatchComplete) << 1 |
+            unsigned(session.phase() == RoundPhase::Podium || session.phase() == RoundPhase::Statistics) << 2;
+        networkFrame.status = SDL_GetTicks() < messageUntil ? shortcutMessage : "";
+        networkFrame.musicMs = static_cast<std::uint32_t>(SDL_GetTicks() - musicStart);
+        online->link.sendFrame(networkFrame);
+        networkFrame.sounds.clear();
+        nextBroadcast = SDL_GetTicks() + 40;
+    };
     bool running = true;
     while (running) {
+        if (online) {
+            online->link.poll(SDL_GetTicks());
+            if (hosting && !online->link.room) return ViewResult::MainMenu;
+            if (!hosting && online->link.room && online->link.room->started) return ViewResult::Network;
+            const bool modal = online->modal();
+            if (modal && !wasModal) display.releaseControls();
+            wasModal = modal;
+            while (hosting && !online->link.commands.empty()) {
+                apply(online->link.commands.front());
+                online->link.commands.pop_front();
+            }
+        }
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
+            if (event.type != SDL_EVENT_KEY_DOWN) keyboard.update(event);
+            if (online && online->handle(event, renderer, true)) continue;
             if (display.handle(event))
                 continue;
             pads.update(event);
-            keyboard.update(event);
+            if (event.type == SDL_EVENT_KEY_DOWN) keyboard.update(event);
             if (event.type == SDL_EVENT_KEY_DOWN && (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_AC_BACK) && !event.key.repeat) {
                 if (session.phase() == RoundPhase::Podium) {
                     session.skipPodium();
@@ -310,55 +443,11 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
             if (event.type == SDL_EVENT_QUIT ||
                 (event.type == SDL_EVENT_KEY_DOWN && (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_AC_BACK) && !event.key.repeat))
                 running = false;
-            if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
-                const auto key = event.key.scancode;
-                switch (key) {
-                case SDL_SCANCODE_F1: session.previousArena(); break;
-                case SDL_SCANCODE_F2: session.nextArena(); break;
-                case SDL_SCANCODE_HOME:
-                case SDL_SCANCODE_HELP: session.replayArena(); break;
-                case SDL_SCANCODE_P: session.togglePause(); break;
-                case SDL_SCANCODE_BACKSLASH:
-                case SDL_SCANCODE_NONUSBACKSLASH:
-                    if (session.reviewPodium())
-                        sound.tick(session.sounds(), false, false, true);
-                    break;
-                default: break;
-                }
-                if (key >= SDL_SCANCODE_F3 && key <= SDL_SCANCODE_F10 &&
-                    !session.paused() && session.phase() != RoundPhase::Podium &&
-                    session.phase() != RoundPhase::Statistics) {
-                    const unsigned requested = key == SDL_SCANCODE_F10 ? 0 : key - SDL_SCANCODE_F3 + 1;
-                    const bool available = sound.selectTrack(requested);
-                    prefs.music = available ? requested : 0;
-                    shortcutMessage = requested == 0 ? "MUSIC OFF" : "MUSIC " + std::to_string(requested);
-                    if (!available)
-                        shortcutMessage += " UNAVAILABLE";
+            if (event.type == SDL_EVENT_KEY_DOWN) {
+                if (!event.key.repeat) apply(matchShortcut(event.key.scancode));
+                if (session.phase() != RoundPhase::Podium && session.phase() != RoundPhase::Statistics &&
+                    adjustVolume(event.key.scancode, prefs, sound, shortcutMessage))
                     messageUntil = SDL_GetTicks() + 2000;
-                }
-            }
-            if (event.type == SDL_EVENT_KEY_DOWN && session.phase() != RoundPhase::Podium &&
-                session.phase() != RoundPhase::Statistics) {
-                auto music = static_cast<int>(prefs.musicVolume);
-                auto effects = static_cast<int>(prefs.effectsVolume);
-                switch (event.key.scancode) {
-                case SDL_SCANCODE_MINUS:
-                case SDL_SCANCODE_KP_MINUS: --music; break;
-                case SDL_SCANCODE_EQUALS:
-                case SDL_SCANCODE_KP_PLUS: ++music; break;
-                case SDL_SCANCODE_KP_DIVIDE: --effects; break;
-                case SDL_SCANCODE_KP_MULTIPLY: ++effects; break;
-                default: break;
-                }
-                if (music != static_cast<int>(prefs.musicVolume) ||
-                    effects != static_cast<int>(prefs.effectsVolume)) {
-                    prefs.musicVolume = std::clamp(music, 0, 64);
-                    prefs.effectsVolume = std::clamp(effects, 0, 64);
-                    sound.setVolumes(prefs.musicVolume, prefs.effectsVolume);
-                    shortcutMessage = "MUSIC " + std::to_string(prefs.musicVolume) +
-                        "  SOUND " + std::to_string(prefs.effectsVolume);
-                    messageUntil = SDL_GetTicks() + 2000;
-                }
             }
         }
         const auto now = SDL_GetTicks();
@@ -367,7 +456,30 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
         for (; elapsed >= 20; elapsed -= 20) {
             auto input = keyboard.read(session, sharedKeyboard);
             pads.read(input);
-            if (lias.read(session, input, keyboard.takeLiaRequests(), liaModel)) {
+            const auto summon = keyboard.takeLiaRequests();
+            if (online && online->modal()) input = {};
+            if (hosting) {
+                input = online->link.humanInputs(networkInput(input));
+                const auto tick = session.elapsed();
+                if (tick < botTick || botRound != session.roundNumber()) {
+                    for (auto& bot : networkLias) bot.reset();
+                    botAction.fill(0);
+                }
+                botRound = session.roundNumber();
+                botTick = tick;
+                if (liaPlaying(session) && !session.paused()) {
+                    for (unsigned i = 0; i < NetworkPlaces; ++i) {
+                        const auto& player = session.players()[i];
+                        if (!player.dead && player.activation == Activation::Hidden) {
+                            input[i].fire = true;
+                        } else if (online->link.room->roster[i] == 'L' && liaAlive(player)) {
+                            const auto step = (tick + LiaActionTicks - i) % LiaActionTicks;
+                            if (!step) botAction[i] = networkLias[i].choose(session, i, liaModel);
+                            input[i] = liaButtons(botAction[i], step);
+                        }
+                    }
+                }
+            } else if ((!online || !online->modal()) && lias.read(session, input, summon, liaModel)) {
                 shortcutMessage = "LIA";
                 messageUntil = SDL_GetTicks() + 2000;
             }
@@ -384,8 +496,10 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
             }
             const auto previousPhase = session.phase();
             const auto reviewing = session.reviewing();
-            session.tick(input);
-            if (useMenu && !reviewing && previousPhase == RoundPhase::Statistics &&
+            if (!hosting || online->link.connected) session.tick(input, true, microMask);
+            if (hosting && online->link.connected && networkFrame.sounds.size() < 32)
+                networkFrame.sounds.insert(networkFrame.sounds.end(), session.sounds().begin(), session.sounds().end());
+            if (useMenu && !hosting && !reviewing && previousPhase == RoundPhase::Statistics &&
                 session.phase() == RoundPhase::AwaitingPlayers)
                 return ViewResult::MainMenu;
             sound.tick(session.sounds(), session.paused(),
@@ -398,7 +512,12 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
             display.beginFrame();
             const SDL_FRect fullScreen{0, 0, ScreenArt::Width, ScreenArt::Height};
             check(SDL_RenderTexture(renderer, podiumTexture.get(), nullptr, &fullScreen));
-            display.present();
+            if (hosting && now >= nextBroadcast) {
+                networkFrame.pixels = picture;
+                networkFrame.pixels.resize(NetPixels);
+                broadcast();
+            }
+            display.present({}, online, true);
             if (smoke) {
                 if (session.roundNumber() != 5 || session.score()[1] != 5 ||
                     session.players()[0].control != 0 || session.players()[1].control != 1)
@@ -459,10 +578,13 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
             message = session.survivorMode() ? "SURVIVOR" : "DON'T MOVE";
         else if (now < messageUntil)
             message = shortcutMessage;
+        const bool capture = hosting && now >= nextBroadcast;
         if (message.empty()) {
             check(SDL_RenderTexture(renderer, bar.get(), nullptr, &barBox));
+            if (capture) copyNetworkBoard(networkFrame.pixels, rgb, barRgb);
         } else {
             const auto woodRgb = levelRgb(hud.wood(), boardPalette);
+            if (capture) copyNetworkBoard(networkFrame.pixels, rgb, woodRgb);
             check(SDL_UpdateTexture(wood.get(), nullptr, woodRgb.data(), ScreenWidth * 3));
             check(SDL_RenderTexture(renderer, wood.get(), nullptr, &barBox));
             check(SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255));
@@ -484,10 +606,14 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
                 attachedSprite(sprites, indices, palette, player->frameBase + frame);
             check(SDL_UpdateTexture(sprite.get(), nullptr, image.data(), SpriteWidth * 4));
             const auto point = player->center();
+            if (capture) copyNetworkSprite(networkFrame.pixels, image, point);
             const SDL_FRect box{float(BoardX + point.x - 7), float(point.y - 20), SpriteWidth, SpriteHeight};
             check(SDL_RenderTexture(renderer, sprite.get(), nullptr, &box));
         }
-        display.present(now < messageUntil ? std::string_view(shortcutMessage) : std::string_view{});
+        if (capture) {
+            broadcast();
+        }
+        display.present(now < messageUntil ? std::string_view(shortcutMessage) : std::string_view{}, online, true);
         if (smoke && smokeFrame >= 6000)
             throw std::runtime_error("match smoke test did not reach the podium");
         if (!smoke)
@@ -496,8 +622,82 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
     return ViewResult::Closed;
 }
 
+ViewResult viewGuest(const Level& level, Preferences& prefs, SoundOutput& sound,
+                     Presentation& display, NetworkPanel& online) {
+    // The guest uses a Session only for the existing keyboard mapping. It never advances it.
+    const Session controllerLayout(level);
+    display.configure(NetWidth, NetHeight, true);
+    auto* renderer = display.renderer();
+    const auto screen = texture(renderer, SDL_PIXELFORMAT_RGB24, NetWidth, NetHeight);
+    Keyboard keyboard;
+    Gamepads pads;
+    std::uint32_t trackRevision = 0;
+    bool wasModal = false;
+    auto nextInput = SDL_GetTicks();
+
+    while (true) {
+        const auto now = SDL_GetTicks();
+        online.link.poll(now);
+        if (!online.link.room) return ViewResult::MainMenu;
+        if (!online.link.connected) trackRevision = 0;
+        const bool modal = online.modal();
+        if (modal && !wasModal) display.releaseControls();
+        wasModal = modal;
+
+        SDL_Event event{};
+        while (SDL_PollEvent(&event)) {
+            if (event.type != SDL_EVENT_KEY_DOWN) keyboard.update(event);
+            if (online.handle(event, renderer, true) || display.handle(event)) continue;
+            pads.update(event);
+            if (event.type == SDL_EVENT_QUIT) return ViewResult::Closed;
+            if (event.type != SDL_EVENT_KEY_DOWN) continue;
+            keyboard.update(event);
+            if (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_AC_BACK) {
+                if (online.link.frames.image().flags & 4) {
+                    online.link.send("C SKIP");
+                    continue;
+                }
+                return ViewResult::MainMenu;
+            }
+            const auto command = matchShortcut(event.key.scancode);
+            if (!event.key.repeat && !command.empty())
+                online.link.send("C " + std::string(command));
+            std::string localVolume;
+            adjustVolume(event.key.scancode, prefs, sound, localVolume);
+        }
+        if (now >= nextInput) {
+            auto controls = keyboard.read(controllerLayout, false);
+            keyboard.takeLiaRequests();
+            pads.read(controls);
+            online.link.sendInput(modal ? Buttons{} : networkInput(controls));
+            nextInput = now + 20;
+        }
+
+        const auto& frame = online.link.frames.image();
+        if (online.link.connected && frame.trackRevision != trackRevision) {
+            trackRevision = frame.trackRevision;
+            if (sound.selectTrack(frame.track)) sound.seekTrack(frame.musicMs);
+        }
+        sound.tick(online.link.frames.takeSounds(), frame.flags & 1, frame.flags & 2, frame.flags & 4);
+        display.beginFrame();
+        if (frame.pixels.size() == NetPixels) {
+            check(SDL_UpdateTexture(screen.get(), nullptr, frame.pixels.data(), NetWidth * 3));
+            const SDL_FRect target{0, 0, NetWidth, NetHeight};
+            check(SDL_RenderTexture(renderer, screen.get(), nullptr, &target));
+        }
+        const auto status = !online.link.connected ? "RECONNEXION..." : frame.pixels.empty() ? "EN ATTENTE DE L'HOTE" :
+            (frame.flags & 1) ? "PAUSE" : frame.status.c_str();
+        if (*status) {
+            check(SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255));
+            check(SDL_RenderDebugText(renderer, (NetWidth - 8.f * SDL_strlen(status)) / 2, BoardHeight + 5, status));
+        }
+        display.present(status, &online, true);
+        SDL_Delay(8);
+    }
+}
+
 MenuResult choose(Menus& menus, const ExtraScreens& extra, SoundOutput& soundtrack, bool showIntro,
-                  Presentation& display) {
+                  Presentation& display, NetworkPanel& online) {
     display.configure(ScreenArt::Width, ScreenArt::Height, false);
     auto* renderer = display.renderer();
     auto screen = texture(renderer, SDL_PIXELFORMAT_RGB24, ScreenArt::Width, ScreenArt::Height);
@@ -515,9 +715,11 @@ MenuResult choose(Menus& menus, const ExtraScreens& extra, SoundOutput& soundtra
     };
     auto nextTick = SDL_GetTicks();
     while (true) {
+        online.link.poll(SDL_GetTicks());
+        if (online.link.room && online.link.room->started) return MenuResult::Network;
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
-            if (display.handle(event))
+            if (online.handle(event, renderer, false) || display.handle(event))
                 continue;
             pads.update(event);
             if (event.type == SDL_EVENT_QUIT)
@@ -562,7 +764,7 @@ MenuResult choose(Menus& menus, const ExtraScreens& extra, SoundOutput& soundtra
                 return result;
         }
         Controls input{};
-        pads.read(input);
+        if (!online.modal()) pads.read(input);
         for (std::size_t i = 0; i < 4; ++i) {
             for (const auto& [button, action] : std::array{
                     std::pair{&Buttons::up, MenuInput::Up}, std::pair{&Buttons::down, MenuInput::Down},
@@ -597,14 +799,14 @@ MenuResult choose(Menus& menus, const ExtraScreens& extra, SoundOutput& soundtra
             display.beginFrame();
             const SDL_FRect content{0, 0, ScreenArt::Width, ScreenArt::Height};
             check(SDL_RenderTexture(renderer, texture, nullptr, &content));
-            display.present();
+            display.present({}, &online);
         }
         SDL_Delay(2);
     }
 }
 
 int launch(const std::filesystem::path& root, const std::filesystem::path& sprites,
-           const std::filesystem::path& level, bool smoke, MatchOptions options, std::optional<unsigned> track, bool useMenu, const LiaModel* liaModel) {
+           const std::filesystem::path& level, bool smoke, MatchOptions options, std::optional<unsigned> track, bool useMenu, const LiaModel* liaModel, std::string url) {
     check(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD));
     Presentation display(ScreenWidth, useMenu ? ScreenArt::Height : ScreenHeight);
     auto arenas = loadArenaList(root / "binary");
@@ -629,11 +831,27 @@ int launch(const std::filesystem::path& root, const std::filesystem::path& sprit
     }
     Menus menus(sprites.parent_path(), arenas, prefs);
     const ExtraScreens extra(sprites.parent_path(), prefs.gradient);
+    NetworkPanel online(std::move(url), settings.empty() ? std::filesystem::path{} : settings.parent_path() / "Network.enabled");
     bool intro = true;
-    while (choose(menus, extra, sound, std::exchange(intro, false), display) == MenuResult::Start)
-        if (view(root, sprites, menus.levelFile(), false, menus.options(), prefs, sound, arenas, liaModel, display, true,
-                 menus.sharedKeyboard()) == ViewResult::Closed)
-            break;
+    bool closed = false;
+    while (!closed) {
+        const auto action = choose(menus, extra, sound, std::exchange(intro, false), display, online);
+        if (action == MenuResult::Exit) break;
+        auto result = ViewResult::Network;
+        if (action == MenuResult::Start)
+            result = view(root, sprites, menus.levelFile(), false, menus.options(), prefs, sound, arenas, liaModel, display,
+                          true, menus.sharedKeyboard(), &online);
+        if (result == ViewResult::Network && online.link.room) {
+            online.started();
+            if (online.link.room->host)
+                result = view(root, sprites, menus.levelFile(), false, menus.options(), prefs, sound, arenas, liaModel,
+                              display, true, menus.sharedKeyboard(), &online, true);
+            else
+                result = viewGuest(loadLevel(level), prefs, sound, display, online);
+            online.link.leave();
+        }
+        closed = result == ViewResult::Closed;
+    }
     if (!settings.empty()) {
         menus.saveOptions(prefs);
         try {
@@ -654,6 +872,7 @@ int main(int argc, char* argv[]) {
         bool useMenu = argc == 1;
         std::optional<unsigned> track;
         std::optional<LiaModel> liaModel;
+        std::string url = "wss://legoblast.elom75.workers.dev/v1/socket";
         std::vector<std::string_view> paths;
         for (int i = 1; i < argc; ++i) {
             const std::string_view arg = argv[i];
@@ -665,6 +884,8 @@ int main(int argc, char* argv[]) {
             else if (arg == "--dyna") options.arena = ArenaMode::Dynablaster;
             else if (arg == "--smoke") smoke = true;
             else if (arg == "--menu") useMenu = true;
+            else if (arg.starts_with("--network-url="))
+                url = std::string(arg.substr(14));
             else if (arg.starts_with("--lia-model="))
                 liaModel.emplace(std::filesystem::path(arg.substr(12)));
             else if (arg.starts_with("--music=")) {
@@ -691,12 +912,12 @@ int main(int argc, char* argv[]) {
             const std::filesystem::path root = std::filesystem::path(reinterpret_cast<const char8_t*>(base)) / "data";
             return launch(root, root / "binary/LEGO_SPRITES.DAT",
                           root / "binary" / ("Lego_Level" + std::string(number) + ".dat"),
-                          smoke, options, track, useMenu && !smoke, liaModel ? &*liaModel : nullptr);
+                          smoke, options, track, useMenu && !smoke, liaModel ? &*liaModel : nullptr, url);
         }
         if (paths.size() != 3)
             throw std::runtime_error("usage: legoblast_players [LEVEL | AMIGA_SRC SPRITES LEVEL.dat] "
                                      "[--free] [--teams | --survivor] [--sequential | --random | --dyna] [--lia-model=FILE]");
-        return launch(paths[0], paths[1], paths[2], smoke, options, track, useMenu && !smoke, liaModel ? &*liaModel : nullptr);
+        return launch(paths[0], paths[1], paths[2], smoke, options, track, useMenu && !smoke, liaModel ? &*liaModel : nullptr, url);
     } catch (const std::exception& error) {
         SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", error.what());
         std::cerr << error.what() << '\n';

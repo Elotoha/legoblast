@@ -77,7 +77,7 @@ struct Bumper {
 class Players {
 public:
     void prepare(const Level& level, bool newLevel, bool dynaLevel);
-    void tick(const Controls& controls, PlayerTick& timing, PlayerMap& map, BombField* bombs = nullptr, bool automaticMicro = true);
+    void tick(const Controls& controls, PlayerTick& timing, PlayerMap& map, BombField* bombs = nullptr, bool automaticMicro = true, unsigned networkMicros = 0);
     void eliminateAbsent();
     void tickBumpers(PlayerMap& map, std::vector<SoundRequest>& sounds);
     void startResult(bool victory, unsigned& animationIndex);
@@ -90,7 +90,7 @@ private:
     void show(Player& player, PlayerTick& timing);
     void applyBonus(Player& player, unsigned number, PlayerTick& timing, BombField& bombs, PlayerMap& map);
     std::array<Player, PlayerCount> players_{};
-    Micro micro_;
+    std::array<Micro, PlayerCount> micros_;
     std::vector<Bumper> bumpers_;
     std::array<bool, static_cast<std::size_t>(Control::Count)> locked_{};
     bool someoneAppeared_{};

@@ -61,7 +61,7 @@ struct ArenaEntry {
 std::vector<ArenaEntry> loadArenaList(const std::filesystem::path& binary);
 
 enum class MenuInput { Up, Down, Left, Right, Fire, Back };
-enum class MenuResult { Continue, Start, Exit };
+enum class MenuResult { Continue, Start, Network, Exit };
 
 class Menus {
 public:

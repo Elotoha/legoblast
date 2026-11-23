@@ -13,6 +13,10 @@ Télécharger **LegoBlast-Android** dans **Actions → LegoBlast Android → Sum
 
 L’APK est signé avec une clé de test. Une mise à jour provenant d’un autre environnement de compilation peut avoir une signature différente. Android demande alors de désinstaller l’ancienne version avant l’installation, ce qui efface ses préférences locales.
 
+## Jeu en réseau
+
+Ouvre **RESEAU** et active les invitations pour rejoindre les autres instances ouvertes. Un salon démarre à quatre places. Lia et Micro peuvent remplir les places libres. En partie réseau, le panneau **RACC.** applique les changements d’arène et de musique à tout le salon.
+
 ## Compiler
 
 Utiliser un JDK 17, Gradle 8.10.2, Python 3.12+, curl et `lhasa` ou `bsdtar`. Installer le SDK Android 35, les Build Tools 35.0.0, le NDK 28.2.13676358 et CMake 3.31.6 avec le gestionnaire de SDK. Définir `ANDROID_HOME` vers le SDK ou ajouter `sdk.dir` dans `port/android/local.properties`.

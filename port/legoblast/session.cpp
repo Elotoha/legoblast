@@ -164,7 +164,7 @@ void Session::tickClock() {
         tickClosing();
 }
 
-void Session::tick(const Controls& input, bool automaticMicro) {
+void Session::tick(const Controls& input, bool automaticMicro, unsigned networkMicros) {
     sounds_.clear();
     if (paused_)
         return;
@@ -216,7 +216,7 @@ void Session::tick(const Controls& input, bool automaticMicro) {
         players_.tickBumpers(map_, sounds_);
     const auto previousSlots = players_.slots();
     timing_.sounds.clear();
-    players_.tick(input, timing_, map_, &bombs_, automaticMicro);
+    players_.tick(input, timing_, map_, &bombs_, automaticMicro, networkMicros);
     sounds_.insert(sounds_.end(), timing_.sounds.begin(), timing_.sounds.end());
     if (timing_.levelTimerRunning && phase_ == RoundPhase::AwaitingPlayers)
         phase_ = RoundPhase::Running;

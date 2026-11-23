@@ -121,6 +121,12 @@ bool SoundOutput::selectTrack(unsigned track) {
     return playback_->select(track);
 }
 
+void SoundOutput::seekTrack(std::uint32_t milliseconds) {
+    auto& output = *playback_;
+    const AudioLock lock(output.stream.get());
+    output.mixer.seekMusic(milliseconds);
+}
+
 void SoundOutput::verifyWithoutGameTicks() const {
     const auto before = playback_->renderedFrames.load(std::memory_order_relaxed);
     const auto deadline = SDL_GetTicks() + 1000;

@@ -10,6 +10,7 @@ public:
 
     explicit Mixer(std::size_t voiceCount);
     void play(const Music& cue);
+    void seekMusic(std::uint32_t milliseconds);
     void setMusicVolume(float volume) { musicVolume_ = volume; }
     void enableStem(std::size_t index, bool enabled);
     bool play(const Sound& sound, unsigned repetitions = 1);

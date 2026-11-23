@@ -1,5 +1,5 @@
 {
   "name": "legoblast-source-port",
   "version-string": "0.1.0",
-  "dependencies": ["sdl3", "libsndfile"]
+  "dependencies": ["sdl3", "libsndfile", {"name": "curl", "features": ["websockets"]}]
 }

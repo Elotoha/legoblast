@@ -16,6 +16,8 @@ namespace legoblast {
 inline constexpr std::array TouchKeys{SDL_SCANCODE_F13, SDL_SCANCODE_F14,
     SDL_SCANCODE_F15, SDL_SCANCODE_F16, SDL_SCANCODE_F17};
 
+class NetworkPanel;
+
 class Presentation {
 public:
     Presentation(int width, int height);
@@ -23,7 +25,8 @@ public:
     SDL_Renderer* renderer() const { return renderer_.get(); }
     bool handle(const SDL_Event& event);
     void beginFrame();
-    void present(std::string_view status = {});
+    void present(std::string_view status = {}, const NetworkPanel* network = nullptr, bool gameplay = false);
+    void releaseControls() { clearTouches(); }
 
 private:
     struct Button {

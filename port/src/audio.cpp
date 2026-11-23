@@ -31,6 +31,14 @@ void Mixer::play(const Music& cue) {
     enabledStems_.assign(cue.stems.size(), true);
 }
 
+void Mixer::seekMusic(std::uint32_t milliseconds) {
+    if (!music_) return;
+    auto frame = std::uint64_t(milliseconds) * music_->stems.front().rate / 1000;
+    if (frame >= music_->loopEnd)
+        frame = music_->loopStart + (frame - music_->loopEnd) % (music_->loopEnd - music_->loopStart);
+    musicPosition_ = frame * Rate;
+}
+
 void Mixer::enableStem(std::size_t index, bool enabled) {
     enabledStems_.at(index) = enabled;
 }

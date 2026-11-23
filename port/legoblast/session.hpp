@@ -24,7 +24,7 @@ class Session {
 public:
     explicit Session(Level level, MatchOptions options = {});
     Session(std::vector<Level> levels, std::size_t startingArena, MatchOptions options);
-    void tick(const Controls& input, bool automaticMicro = true);
+    void tick(const Controls& input, bool automaticMicro = true, unsigned networkMicros = 0);
     void resetMatch(RandomState random = {});
     void togglePause();
     void previousArena();

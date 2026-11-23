@@ -1,4 +1,5 @@
 #include "presentation.hpp"
+#include "network_panel.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -22,6 +23,7 @@ void check(bool ok) {
 }
 
 Presentation::Presentation(int width, int height) {
+    SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
     if (Touchscreen) {
         SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
         SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
@@ -280,10 +282,11 @@ void Presentation::drawControls(std::string_view status) {
     drawButtons(std::span(&toggle, 1));
 }
 
-void Presentation::present(std::string_view status) {
+void Presentation::present(std::string_view status, const NetworkPanel* network, bool gameplay) {
     check(SDL_SetRenderViewport(renderer(), nullptr));
     if (Touchscreen)
         drawControls(status);
+    if (network) network->render(renderer(), gameplay);
     check(SDL_RenderPresent(renderer()));
 }
 }

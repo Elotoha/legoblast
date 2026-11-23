@@ -2,6 +2,7 @@
 
 #include "sound_cues.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <span>
@@ -12,6 +13,7 @@ public:
     SoundOutput(const std::filesystem::path& root, unsigned track, bool smoke);
     ~SoundOutput();
     bool selectTrack(unsigned track);
+    void seekTrack(std::uint32_t milliseconds);
     void verifyWithoutGameTicks() const;
     void setVolumes(unsigned music, unsigned effects);
     void setMenuVoices(unsigned count);

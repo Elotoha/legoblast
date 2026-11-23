@@ -1,0 +1,12 @@
+name = "legoblast"
+main = "worker.mjs"
+compatibility_date = "2026-11-23"
+workers_dev = true
+
+[[durable_objects.bindings]]
+name = "LOBBY"
+class_name = "LegoBlastLobby"
+
+[[migrations]]
+tag = "network-v1"
+new_sqlite_classes = ["LegoBlastLobby"]
