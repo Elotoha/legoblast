@@ -56,7 +56,7 @@ Le ZIP Windows x64 est produit par le workflow [Joueurs LegoBlast Windows](https
 | **Début** ou **Aide** | Rejoue l’arène. En Dynablaster, génère un nouveau labyrinthe. |
 | **P**, **Échap** | Pause ou retour au menu. En lancement direct, Échap ferme le jeu. |
 | **Retour arrière** | Fait rejoindre Micro, le joueur contrôlé par l’ordinateur. |
-| **L** | Fait rejoindre Lia, l’adversaire qui simule les actions plusieurs VBL à l’avance. |
+| **L** | Ajoute une Lia à la prochaine place libre. Chaque Lia simule ses actions plusieurs VBL à l’avance. |
 | `\` | Affiche le podium intermédiaire en début de manche ou après un résultat. |
 | **+**, **−** | Volume de la musique. |
 | `/`, `*` au pavé numérique | Volume des effets. |

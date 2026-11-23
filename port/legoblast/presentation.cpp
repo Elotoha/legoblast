@@ -1,6 +1,7 @@
 #include "presentation.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 
 namespace legoblast {
@@ -10,7 +11,7 @@ constexpr bool Touchscreen = true;
 #else
 constexpr bool Touchscreen = false;
 #endif
-constexpr int Gutter = Touchscreen ? 68 : 0;
+constexpr int Gutter = Touchscreen ? 84 : 0;
 constexpr std::array<Uint8, 3> Background{14, 19, 29};
 
 void check(bool ok) {
@@ -47,19 +48,20 @@ void Presentation::configure(int width, int height, bool gameplay) {
     if (!Touchscreen)
         return;
     const float right = width + Gutter;
-    const float row = height - 102.f;
+    const float center = height - 86.f;
+    steeringArea_ = gameplay ? SDL_FRect{0, center - 67, Gutter, 134} : SDL_FRect{};
     buttons_ = {
-        {{20, row - 35, 28, 32}, gameplay ? TouchKeys[2] : SDL_SCANCODE_UP, "^"},
-        {{ 2, row,      30, 35}, gameplay ? TouchKeys[0] : SDL_SCANCODE_LEFT, "<"},
-        {{36, row,      30, 35}, gameplay ? TouchKeys[1] : SDL_SCANCODE_RIGHT, ">"},
-        {{20, row + 38, 28, 34}, gameplay ? TouchKeys[3] : SDL_SCANCODE_DOWN, "v"},
-        {{right + 6, height - 78.f, 56, 50}, gameplay ? TouchKeys[4] : SDL_SCANCODE_RETURN, gameplay ? "FIRE" : "OK"},
-        {{right + 6, 9, 56, 34}, SDL_SCANCODE_ESCAPE, "BACK"},
+        {{26, center - 53, 32, 34}, gameplay ? TouchKeys[2] : SDL_SCANCODE_UP, "^"},
+        {{ 4, center - 17, 34, 34}, gameplay ? TouchKeys[0] : SDL_SCANCODE_LEFT, "<"},
+        {{46, center - 17, 34, 34}, gameplay ? TouchKeys[1] : SDL_SCANCODE_RIGHT, ">"},
+        {{26, center + 19, 32, 34}, gameplay ? TouchKeys[3] : SDL_SCANCODE_DOWN, "v"},
+        {{right + 8, height - 78.f, 68, 50}, gameplay ? TouchKeys[4] : SDL_SCANCODE_RETURN, gameplay ? "FIRE" : "OK"},
+        {{right + 8, 9, 68, 34}, SDL_SCANCODE_ESCAPE, "BACK"},
     };
     if (gameplay) {
-        buttons_.push_back({{6, 9, 56, 34}, SDL_SCANCODE_P, "PAUSE"});
-        buttons_.push_back({{right + 6, 52, 56, 34}, SDL_SCANCODE_BACKSPACE, "MICRO"});
-        buttons_.push_back({{right + 6, 93, 56, 34}, SDL_SCANCODE_L, "LIA"});
+        buttons_.push_back({{8, 9, 68, 34}, SDL_SCANCODE_P, "PAUSE"});
+        buttons_.push_back({{right + 8, 52, 68, 34}, SDL_SCANCODE_BACKSPACE, "MICRO"});
+        buttons_.push_back({{right + 8, 93, 68, 34}, SDL_SCANCODE_L, "LIA"});
     }
 }
 
@@ -84,6 +86,19 @@ void Presentation::clearTouches() {
     touches_.clear();
 }
 
+SDL_Scancode Presentation::directionAt(SDL_FPoint point, SDL_Scancode previous) const {
+    const float dx = point.x - (steeringArea_.x + steeringArea_.w / 2);
+    const float dy = point.y - (steeringArea_.y + steeringArea_.h / 2);
+    const float horizontal = std::abs(dx), vertical = std::abs(dy);
+    if (std::max(horizontal, vertical) < 8.f)
+        return SDL_SCANCODE_UNKNOWN;
+    // Hold the current axis near a diagonal to avoid oscillating at the corners.
+    const auto stick = std::abs(horizontal - vertical) < 4.f;
+    const auto wasHorizontal = previous == TouchKeys[0] || previous == TouchKeys[1];
+    const auto useHorizontal = stick && previous != SDL_SCANCODE_UNKNOWN ? wasHorizontal : horizontal > vertical;
+    return useHorizontal ? TouchKeys[dx < 0 ? 0 : 1] : TouchKeys[dy < 0 ? 2 : 3];
+}
+
 void Presentation::handle(const SDL_Event& event) {
     if (!Touchscreen)
         return;
@@ -101,26 +116,38 @@ void Presentation::handle(const SDL_Event& event) {
     });
     const auto previous = found == touches_.end() ? SDL_SCANCODE_UNKNOWN : found->key;
     SDL_Scancode next = SDL_SCANCODE_UNKNOWN;
+    bool steering = found != touches_.end() && found->steering;
     if (!release) {
         SDL_Event converted = event;
         check(SDL_ConvertEventToRenderCoordinates(renderer(), &converted));
         const SDL_FPoint point{converted.tfinger.x, converted.tfinger.y};
-        for (const auto& button : buttons_)
-            if (SDL_PointInRectFloat(&point, &button.box)) {
-                next = button.key;
-                break;
+        if (event.type == SDL_EVENT_FINGER_DOWN && SDL_PointInRectFloat(&point, &steeringArea_))
+            steering = std::ranges::none_of(touches_, &Touch::steering);
+        if (steering) {
+            next = directionAt(point, previous);
+        } else {
+            for (const auto& button : buttons_) {
+                // Directions belong to the captured thumb in gameplay.
+                if (steeringArea_.w && button.key >= TouchKeys[0] && button.key <= TouchKeys[3])
+                    continue;
+                if ((button.key != SDL_SCANCODE_L || event.type == SDL_EVENT_FINGER_DOWN ||
+                     previous == SDL_SCANCODE_L) && SDL_PointInRectFloat(&point, &button.box)) {
+                    next = button.key;
+                    break;
+                }
             }
+        }
     }
-    if (previous == next)
+    if (previous == next && !release && (!steering || found != touches_.end()))
         return;
     if (found != touches_.end())
         touches_.erase(found);
     if (previous != SDL_SCANCODE_UNKNOWN && !held(previous))
         key(previous, false);
-    if (next != SDL_SCANCODE_UNKNOWN) {
+    if (next != SDL_SCANCODE_UNKNOWN || (steering && !release)) {
         const bool alreadyHeld = held(next);
-        touches_.push_back({finger.touchID, finger.fingerID, next});
-        if (!alreadyHeld)
+        touches_.push_back({finger.touchID, finger.fingerID, next, steering});
+        if (next != SDL_SCANCODE_UNKNOWN && !alreadyHeld)
             key(next, true);
     }
 }
@@ -132,6 +159,10 @@ void Presentation::beginFrame() {
 }
 
 void Presentation::drawControls() {
+    if (steeringArea_.w) {
+        check(SDL_SetRenderDrawColor(renderer(), 24, 32, 45, 255));
+        check(SDL_RenderFillRect(renderer(), &steeringArea_));
+    }
     for (const auto& button : buttons_) {
         const bool pressed = held(button.key);
         check(SDL_SetRenderDrawColor(renderer(), pressed ? 107 : 41, pressed ? 78 : 50, pressed ? 46 : 67, 255));

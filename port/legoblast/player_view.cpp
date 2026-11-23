@@ -40,13 +40,19 @@ public:
         if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WILL_ENTER_BACKGROUND) {
             held_.fill(false);
             pressed_.fill(false);
+            liaRequests_ = 0;
         }
         if (event.type != SDL_EVENT_KEY_DOWN && event.type != SDL_EVENT_KEY_UP)
             return;
         const auto code = event.key.scancode;
         if (code <= SDL_SCANCODE_UNKNOWN || code >= SDL_SCANCODE_COUNT)
             return;
+        if (code == SDL_SCANCODE_L && event.type == SDL_EVENT_KEY_DOWN &&
+            !held_[code] && !event.key.repeat)
+            liaRequests_ = std::min(liaRequests_ + 1, static_cast<unsigned>(PlayerCount));
         held_[code] = event.type == SDL_EVENT_KEY_DOWN;
+        if (held_[code] && code >= TouchKeys[0] && code <= TouchKeys[3])
+            lastTouchDirection_ = code;
         if (held_[code] && !event.key.repeat)
             pressed_[code] = true;
     }
@@ -75,17 +81,26 @@ public:
             down(SDL_SCANCODE_KP_5) || down(SDL_SCANCODE_KP_RIGHTBRACE) || down(SDL_SCANCODE_RIGHTBRACKET),
             down(SDL_SCANCODE_KP_8), shared && down(SDL_SCANCODE_RIGHT)};
         input[static_cast<std::size_t>(Control::Micro)].fire = down(SDL_SCANCODE_BACKSPACE);
-        input[static_cast<std::size_t>(Control::Lia)].fire = down(SDL_SCANCODE_L);
 #ifdef SDL_PLATFORM_ANDROID
+        const auto movementKeys = std::span(TouchKeys).first<4>();
+        const auto hasHeldDirection = std::ranges::any_of(movementKeys, [&](auto key) { return held_[key]; });
+        const auto direction = [&](SDL_Scancode key) {
+            return held_[key] || (!hasHeldDirection && pressed_[key] && lastTouchDirection_ == key);
+        };
         input[static_cast<std::size_t>(Control::Touch)] = {
-            down(TouchKeys[0]), down(TouchKeys[1]), down(TouchKeys[2]), down(TouchKeys[3]), down(TouchKeys[4])};
+            direction(TouchKeys[0]), direction(TouchKeys[1]),
+            direction(TouchKeys[2]), direction(TouchKeys[3]), down(TouchKeys[4])};
 #endif
         pressed_.fill(false);
         return input;
     }
 
+    unsigned takeLiaRequests() { return std::exchange(liaRequests_, 0); }
+
 private:
     std::array<bool, SDL_SCANCODE_COUNT> held_{}, pressed_{};
+    SDL_Scancode lastTouchDirection_{SDL_SCANCODE_UNKNOWN};
+    unsigned liaRequests_{};
 };
 
 void verifyKeyboardMapping(const Session& session) {
@@ -113,10 +128,12 @@ void verifyKeyboardMapping(const Session& session) {
     key.type = SDL_EVENT_KEY_DOWN;
     key.key.scancode = SDL_SCANCODE_L;
     keyboard.update(key);
-    const auto lia = keyboard.read(session, false);
-    if (!lia[static_cast<std::size_t>(Control::Lia)].fire ||
-        lia[static_cast<std::size_t>(Control::Micro)].fire)
+    if (keyboard.takeLiaRequests() != 1)
         throw std::runtime_error("Lia lost its separate join key");
+    key.key.repeat = true;
+    keyboard.update(key);
+    if (keyboard.takeLiaRequests())
+        throw std::runtime_error("a held key summoned another Lia");
 }
 
 class Gamepads {
@@ -247,9 +264,7 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
         menus.render(15);
     }
     unsigned smokeFrame = 0;
-    Lia lia;
-    unsigned liaAction{}, liaTick{LiaActionTicks}, previousLiaTick{}, liaRound{};
-    constexpr auto liaControl = static_cast<std::size_t>(Control::Lia);
+    LiaGroup lias;
 
     Gamepads pads;
     Keyboard keyboard;
@@ -351,26 +366,9 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
         for (; elapsed >= 20; elapsed -= 20) {
             auto input = keyboard.read(session, sharedKeyboard);
             pads.read(input);
-            if (!session.paused() && liaPlaying(session)) {
-                const auto& slots = session.players();
-                const auto bot = std::ranges::find(slots, static_cast<int>(Control::Lia), &Player::control);
-                if (bot == slots.end() && input[liaControl].fire) {
-                    shortcutMessage = "LIA";
-                    messageUntil = SDL_GetTicks() + 2000;
-                }
-                if (bot != slots.end() && liaAlive(*bot)) {
-                    if (liaRound != session.roundNumber() || session.elapsed() < previousLiaTick) {
-                        lia.reset();
-                        liaRound = session.roundNumber();
-                        liaTick = LiaActionTicks;
-                    }
-                    if (liaTick >= LiaActionTicks) {
-                        liaAction = lia.choose(session, bot - slots.begin(), liaModel);
-                        liaTick = 0;
-                    }
-                    input[liaControl] = liaButtons(liaAction, liaTick++);
-                    previousLiaTick = session.elapsed();
-                }
+            if (lias.read(session, input, keyboard.takeLiaRequests(), liaModel)) {
+                shortcutMessage = "LIA";
+                messageUntil = SDL_GetTicks() + 2000;
             }
             if (smoke) {
                 input = {};

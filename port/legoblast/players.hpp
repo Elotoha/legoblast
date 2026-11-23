@@ -10,7 +10,7 @@ namespace legoblast {
 class BombField;
 inline constexpr std::size_t PlayerCount = 6;
 // JoyList order in lego17.asm. Input is sampled before the VBL player update.
-enum class Control : std::size_t { Joy0, Joy1, Joy3, Joy4, Keyboard1, Keyboard2, Keyboard3, Micro, Lia, Touch, Count };
+enum class Control : std::size_t { Joy0, Joy1, Joy3, Joy4, Keyboard1, Keyboard2, Keyboard3, Micro, Lia, Lia2, Lia3, Lia4, Lia5, Lia6, Touch, Count };
 struct Buttons {
     bool left{}, right{}, up{}, down{}, fire{};
 };

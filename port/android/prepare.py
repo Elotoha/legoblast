@@ -4,8 +4,10 @@
 import hashlib
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import tarfile
+import zlib
 from tempfile import TemporaryDirectory
 
 HERE = Path(__file__).resolve().parent
@@ -84,6 +86,53 @@ def stage_assets():
     (staging / "data.id").write_text(manifest.hexdigest() + "\n", encoding="ascii")
 
 
+def stage_icon():
+    binary = GENERATED / "assets/data/binary"
+    heads = (binary / "statsblocs.dat").read_bytes()
+    palette = (binary / "Podium.col").read_bytes()
+    plane_size = 3 * 122
+
+    # The first nine rows of the first portrait contain the face. Plane 0
+    # is its mask, and planes 1–7 index the same palette as the podium.
+    face = []
+    for y in range(9):
+        row = []
+        for x in range(3, 14):
+            offset = 3 * y + x // 8
+            mask = 128 >> (x % 8)
+            index = sum(1 << plane for plane in range(7)
+                        if heads[(plane + 1) * plane_size + offset] & mask)
+            row.append(palette[index * 4 + 1:index * 4 + 4] + b"\xff" if heads[offset] & mask else None)
+        face.append(row)
+
+    def write_icon(relative, size, zoom, background):
+        pixels = bytearray(background * size * size)
+        left = (size - len(face[0]) * zoom) // 2
+        top = (size - len(face) * zoom) // 2
+        for y, row in enumerate(face):
+            for x, color in enumerate(row):
+                if color is None:
+                    continue
+                for dy in range(zoom):
+                    start = 4 * ((top + y * zoom + dy) * size + left + x * zoom)
+                    pixels[start:start + 4 * zoom] = color * zoom
+
+        def chunk(kind, data):
+            return (struct.pack(">I", len(data)) + kind + data +
+                    struct.pack(">I", zlib.crc32(kind + data)))
+
+        scanlines = b"".join(b"\0" + pixels[row:row + 4 * size]
+                             for row in range(0, len(pixels), 4 * size))
+        png = (b"\x89PNG\r\n\x1a\n" +
+               chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)) +
+               chunk(b"IDAT", zlib.compress(scanlines)) + chunk(b"IEND", b""))
+        path = GENERATED / "res" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(png)
+
+    write_icon("drawable-nodpi/legoblast_head.png", 108, 5, b"\0" * 4)
+    write_icon("mipmap-xxxhdpi/legoblast.png", 192, 12, b"\0\0\0\xff")
+
 def main():
     GENERATED.mkdir(exist_ok=True)
     sdl = fetch(f"https://github.com/libsdl-org/SDL/releases/download/release-3.2.30/{SDL}.tar.gz",
@@ -94,6 +143,7 @@ def main():
     fetch(f"https://raw.githubusercontent.com/mackron/dr_libs/{DR_COMMIT}/dr_flac.h",
           "dr_flac.h", "bd569c910a7c465e481fd50af84e2871e81e2154e30ac510d98f953cc0d5a546")
     stage_assets()
+    stage_icon()
 
 
 if __name__ == "__main__":

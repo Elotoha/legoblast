@@ -60,11 +60,42 @@ void shortFuse() {
     require(sawFlame && std::ranges::all_of(obs, [](float value) { return std::isfinite(value); }),
             "no flame observed or invalid neural input");
 }
+void multipleLias() {
+    Level level{};
+    level.speed = 2;
+    level.totalTime = level.warningTime = 1000;
+    Session game(level);
+    LiaGroup lias;
+    Controls input{};
+    input[0].fire = true;
+    game.tick(input);
+    for (std::size_t i = 0; i < PlayerCount - 1; ++i) {
+        input = {};
+        require(lias.read(game, input, 1) == 1 && input[FirstLiaControl + i].fire,
+                "summon did not use the next free Lia controller");
+        game.tick(input);
+        require(game.players()[0].control == 0 &&
+                game.players()[i + 1].control == static_cast<int>(FirstLiaControl + i),
+                "summon displaced a player or claimed multiple slots");
+    }
+    input = {};
+    require(lias.read(game, input, 1) == 0, "Lia joined a full match");
+    game.replayArena();
+    for (unsigned i = 0; i < 45; ++i) {
+        input = {};
+        lias.read(game, input, 0);
+        game.tick(input);
+    }
+    for (std::size_t i = 1; i < PlayerCount; ++i)
+        require(liaAlive(game.players()[i]), "a Lia did not respawn on the next round");
+}
+
 }
 
 int main() {
     try {
         shortFuse();
+        multipleLias();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

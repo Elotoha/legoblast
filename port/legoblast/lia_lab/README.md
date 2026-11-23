@@ -1,6 +1,6 @@
 # Lia et le laboratoire LegoBlast
 
-En partie, **L** fait rejoindre Lia. **Retour arrière** reste la touche de Micro. Les deux ordinateurs peuvent jouer dans la même partie si deux places sont libres.
+En partie, chaque appui sur **L** ajoute une Lia à la prochaine place libre. **Retour arrière** reste la touche de Micro. Chaque Lia calcule ses propres décisions, et les calculs sont répartis sur plusieurs VBL.
 
 Lia teste dix commandes, soit cinq directions avec ou sans une impulsion de Feu. Elle explore des suites de mouvements sur 40 VBL, puis prolonge les trajectoires retenues sans input jusqu’à l’extinction des bombes ou jusqu’à 900 VBL de plus. Elle utilise des copies de `Session`, avec les mêmes routines de collision, poussée, gel, mèche, rebond, bumper, téléportation, propagation dans les tuyaux et réaction en chaîne que la partie réelle. Elle privilégie les refuges, la collecte des bonus et les occasions d’ouvrir un passage ou de toucher un rival. Elle suppose que les adversaires cessent de donner des commandes pendant ses simulations, puis recalcule toutes les huit VBL.
 

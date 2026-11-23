@@ -231,6 +231,58 @@ unsigned Lia::choose(const Session& session, std::size_t self, const LiaModel* m
     return lastChance;
 }
 
+unsigned LiaGroup::read(const Session& session, Controls& input, unsigned requests, const LiaModel* model) {
+    static_assert(static_cast<std::size_t>(Control::Lia6) - FirstLiaControl + 1 == PlayerCount);
+    static_assert(PlayerCount <= LiaActionTicks);
+    if (session.paused() || !liaPlaying(session))
+        return 0;
+    const auto tick = session.elapsed();
+    if (round_ != session.roundNumber() || tick < lastTick_) {
+        agents_ = {};
+        round_ = session.roundNumber();
+    }
+    lastTick_ = tick;
+
+    std::array<bool, PlayerCount> occupied{};
+    const auto& players = session.players();
+    unsigned seats = 0;
+    for (std::size_t slot = 0; slot < players.size(); ++slot) {
+        const auto& player = players[slot];
+        seats += player.control < 0 && !player.dead;
+        if (player.control < static_cast<int>(FirstLiaControl) ||
+            player.control >= static_cast<int>(FirstLiaControl + PlayerCount))
+            continue;
+        const auto control = static_cast<std::size_t>(player.control);
+        const auto index = control - FirstLiaControl;
+        occupied[index] = true;
+
+        if (player.activation == Activation::Hidden && !player.dead) {
+            input[control].fire = true;
+            continue;
+        }
+        if (!liaAlive(player))
+            continue;
+        auto& agent = agents_[index];
+        // Replan at different VBL phases when several Lias are playing.
+        if (tick % LiaActionTicks == index) {
+            agent.action = agent.policy.choose(session, slot, model);
+            agent.plannedAt = tick;
+            agent.planned = true;
+        }
+        if (agent.planned)
+            input[control] = liaButtons(agent.action, tick - agent.plannedAt);
+    }
+
+    unsigned joined = 0;
+    for (std::size_t index = 0; index < occupied.size() && joined < std::min(requests, seats); ++index) {
+        if (!occupied[index]) {
+            input[FirstLiaControl + index].fire = true;
+            ++joined;
+        }
+    }
+    return joined;
+}
+
 std::array<float, LiaFeatures> liaObservation(const Session& session, std::size_t seat) {
     const auto& player = session.players().at(seat);
     const auto center = player.center();

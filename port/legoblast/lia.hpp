@@ -6,6 +6,7 @@ namespace legoblast {
 
 inline constexpr unsigned LiaActionCount = 10;
 inline constexpr unsigned LiaActionTicks = 8;
+inline constexpr auto FirstLiaControl = static_cast<std::size_t>(Control::Lia);
 inline constexpr unsigned LiaFeatures = 24 + 7 * 7 * 14;
 
 Buttons liaButtons(unsigned action, unsigned tick);
@@ -30,6 +31,22 @@ public:
 
 private:
     std::array<float, Width * Height> visits_{};
+};
+
+// One independent tactical memory per summoned controller.
+class LiaGroup {
+public:
+    unsigned read(const Session& session, Controls& input, unsigned requests, const LiaModel* model = nullptr);
+
+private:
+    struct Agent {
+        Lia policy;
+        unsigned action{};
+        unsigned plannedAt{};
+        bool planned{};
+    };
+    std::array<Agent, PlayerCount> agents_{};
+    unsigned round_{}, lastTick_{};
 };
 
 }

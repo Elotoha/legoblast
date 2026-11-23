@@ -32,16 +32,19 @@ private:
         SDL_TouchID device;
         SDL_FingerID finger;
         SDL_Scancode key;
+        bool steering;
     };
 
     void key(SDL_Scancode code, bool down);
     bool held(SDL_Scancode code) const;
     void clearTouches();
     void drawControls();
+    SDL_Scancode directionAt(SDL_FPoint point, SDL_Scancode previous) const;
 
     std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)> window_{nullptr, SDL_DestroyWindow};
     std::unique_ptr<SDL_Renderer, decltype(&SDL_DestroyRenderer)> renderer_{nullptr, SDL_DestroyRenderer};
     SDL_Rect viewport_{};
+    SDL_FRect steeringArea_{};
     std::vector<Touch> touches_;
     std::vector<Button> buttons_;
 };

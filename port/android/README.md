@@ -5,8 +5,9 @@ Cette version reprend le jeu C++ de la branche Lia. L’APK de test signé fonct
 Télécharger **LegoBlast-Android** dans **Actions → LegoBlast Android → Summary → Artifacts**. Extraire le ZIP de GitHub, ouvrir `LegoBlast-Android.apk` sur l’appareil et autoriser l’installation depuis l’application utilisée pour l’ouvrir si Android le demande.
 
 - **Croix** et **OK** pour naviguer dans les menus. **BACK** revient en arrière.
+- En partie, garde le pouce sur la **croix** et glisse d’une direction à l’autre pour tourner.
 - **FIRE** fait apparaître le joueur tactile. Relâcher puis appuyer à nouveau pour poser une bombe.
-- **MICRO** et **LIA** font rejoindre les adversaires. Une manette reconnue par Android peut aussi rejoindre avec son bouton principal.
+- **MICRO** fait rejoindre Micro. Chaque appui sur **LIA** ajoute une Lia à une place libre. Une manette reconnue par Android peut aussi rejoindre avec son bouton principal.
 - **PAUSE** suspend ou reprend la partie. **BACK** revient au menu.
 
 L’APK est signé avec une clé de test. Une mise à jour provenant d’un autre environnement de compilation peut avoir une signature différente. Android demande alors de désinstaller l’ancienne version avant l’installation, ce qui efface ses préférences locales.
