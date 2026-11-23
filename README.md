@@ -1,5 +1,7 @@
 # legoblast
-Legoblast game I (Gogo) have developped in 1996 in Assembler 68020/68030 on Amiga. Experiment to convert it to Python or another language.
+Legoblast game I (Gogo) have developped in 1996 in Assembler 68020/68030 on Amiga with friends. 
+This repo gives the source code and is an experiment to convert it to Python, C++ or another language thanks to AI.
+It looks impressive, in an evening it works... 
 
 Complete game:
 https://aminet.net/package/game/2play/LegoBlast
