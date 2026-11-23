@@ -3,7 +3,6 @@
 
 #include <nlohmann/json.hpp>
 #include <png.h>
-#include <sndfile.h>
 
 #include <algorithm>
 #include <array>
@@ -137,7 +136,7 @@ Assets loadAssets(const std::filesystem::path& package) {
         result.images.emplace(id, loadImage(package, entry));
     });
     readGroup(manifest, "sounds", [&](const auto& id, const auto& entry) {
-        result.sounds.emplace(id, Sound{loadAudioClip(file(package, entry.at("file"), ".wav"), SF_FORMAT_WAV),
+        result.sounds.emplace(id, Sound{loadAudioClip(file(package, entry.at("file"), ".wav"), AudioContainer::Wav),
                                        entry.value("priority", 0), volume(entry)});
     });
     readGroup(manifest, "music", [&](const auto& id, const auto& entry) {
@@ -146,7 +145,7 @@ Assets loadAssets(const std::filesystem::path& package) {
         require(filenames.is_array() && !filenames.empty() && filenames.size() <= 32,
                 "expected 1 to 32 music stems");
         for (const auto& name : filenames)
-            music.stems.push_back(loadAudioClip(file(package, name, ".flac"), SF_FORMAT_FLAC));
+            music.stems.push_back(loadAudioClip(file(package, name, ".flac"), AudioContainer::Flac));
         const auto& first = music.stems.front();
         for (const auto& clip : music.stems)
             require(clip.rate == first.rate && clip.frames() == first.frames(),

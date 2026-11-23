@@ -3,7 +3,6 @@
 #include "audio_io.hpp"
 
 #include <SDL3/SDL.h>
-#include <sndfile.h>
 
 #include <array>
 #include <algorithm>
@@ -46,7 +45,7 @@ struct SoundOutput::Playback {
         : assetRoot(root) {
         for (unsigned i = 0; i < effects.size(); ++i) {
             const auto file = "sample-" + std::to_string(100 + i).substr(1) + ".wav";
-            effects[i].clip = loadAudioClip(root / file, SF_FORMAT_WAV);
+            effects[i].clip = loadAudioClip(root / file, AudioContainer::Wav);
             effects[i].volume = 0.5f;
         }
         select(track);
@@ -89,10 +88,10 @@ struct SoundOutput::Playback {
             if (track == 9) {
                 for (unsigned voice = 1; voice <= 4; ++voice) {
                     const auto name = "Mod_Menu_Voice" + std::to_string(voice) + ".flac";
-                    replacement.stems.push_back(loadAudioClip(assetRoot / name, SF_FORMAT_FLAC));
+                    replacement.stems.push_back(loadAudioClip(assetRoot / name, AudioContainer::Flac));
                 }
             } else {
-                replacement.stems.push_back(loadAudioClip(assetRoot / file, SF_FORMAT_FLAC));
+                replacement.stems.push_back(loadAudioClip(assetRoot / file, AudioContainer::Flac));
             }
             replacement.loopEnd = replacement.stems.front().frames();
             replacement.volume = 35.f / 64;

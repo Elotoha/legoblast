@@ -5,7 +5,8 @@
 #include <memory>
 #include <stdexcept>
 
-AudioClip loadAudioClip(const std::filesystem::path& path, int container) {
+AudioClip loadAudioClip(const std::filesystem::path& path, AudioContainer type) {
+    const auto container = type == AudioContainer::Wav ? SF_FORMAT_WAV : SF_FORMAT_FLAC;
     SF_INFO info{};
 #ifdef _WIN32
     auto* file = sf_wchar_open(path.c_str(), SFM_READ, &info);

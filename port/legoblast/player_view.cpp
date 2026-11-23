@@ -1,5 +1,6 @@
 #include "hud.hpp"
 #include "lia.hpp"
+#include "presentation.hpp"
 #include "screens.hpp"
 #include "sound_output.hpp"
 #include "sprite.hpp"
@@ -36,7 +37,7 @@ void check(bool success) {
 class Keyboard {
 public:
     void update(const SDL_Event& event) {
-        if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+        if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WILL_ENTER_BACKGROUND) {
             held_.fill(false);
             pressed_.fill(false);
         }
@@ -75,6 +76,10 @@ public:
             down(SDL_SCANCODE_KP_8), shared && down(SDL_SCANCODE_RIGHT)};
         input[static_cast<std::size_t>(Control::Micro)].fire = down(SDL_SCANCODE_BACKSPACE);
         input[static_cast<std::size_t>(Control::Lia)].fire = down(SDL_SCANCODE_L);
+#ifdef SDL_PLATFORM_ANDROID
+        input[static_cast<std::size_t>(Control::Touch)] = {
+            down(TouchKeys[0]), down(TouchKeys[1]), down(TouchKeys[2]), down(TouchKeys[3]), down(TouchKeys[4])};
+#endif
         pressed_.fill(false);
         return input;
     }
@@ -201,7 +206,7 @@ Session makeSession(const std::filesystem::path& binary, const std::filesystem::
 
 ViewResult view(const std::filesystem::path& root, const std::filesystem::path& spriteFile,
          const std::filesystem::path& levelFile, bool smoke, MatchOptions options, Preferences& prefs, SoundOutput& sound,
-         const std::vector<ArenaEntry>& arenaList, const LiaModel* liaModel,
+         const std::vector<ArenaEntry>& arenaList, const LiaModel* liaModel, Presentation& display,
          bool useMenu = false, bool sharedKeyboard = false) {
     const auto binary = root / "binary";
     auto session = makeSession(binary, levelFile, options, arenaList);
@@ -258,20 +263,13 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
             throw std::runtime_error("music shortcut could not switch tracks");
         sound.verifyWithoutGameTicks();
     }
-    SDL_Window* windowRaw{};
-    SDL_Renderer* rendererRaw{};
-    check(SDL_CreateWindowAndRenderer("LegoBlast", 3 * ScreenWidth, 3 * ScreenHeight,
-                                     SDL_WINDOW_RESIZABLE, &windowRaw, &rendererRaw));
-    Handle<SDL_Window, SDL_DestroyWindow> window(windowRaw, SDL_DestroyWindow);
-    Handle<SDL_Renderer, SDL_DestroyRenderer> renderer(rendererRaw, SDL_DestroyRenderer);
-    check(SDL_SetRenderLogicalPresentation(renderer.get(), ScreenWidth, ScreenHeight,
-                                          SDL_LOGICAL_PRESENTATION_INTEGER_SCALE));
-    check(SDL_SetWindowMinimumSize(window.get(), ScreenWidth, ScreenHeight));
-    auto background = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, BoardWidth, BoardHeight);
-    auto bar = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, Hud::Width, Hud::Height);
-    auto wood = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, ScreenWidth, Hud::Height);
-    auto podiumTexture = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, ScreenArt::Width, ScreenArt::Height);
-    auto sprite = texture(renderer.get(), SDL_PIXELFORMAT_RGBA32, SpriteWidth, SpriteHeight);
+    display.configure(ScreenWidth, ScreenHeight, true);
+    auto* renderer = display.renderer();
+    auto background = texture(renderer, SDL_PIXELFORMAT_RGB24, BoardWidth, BoardHeight);
+    auto bar = texture(renderer, SDL_PIXELFORMAT_RGB24, Hud::Width, Hud::Height);
+    auto wood = texture(renderer, SDL_PIXELFORMAT_RGB24, ScreenWidth, Hud::Height);
+    auto podiumTexture = texture(renderer, SDL_PIXELFORMAT_RGB24, ScreenArt::Width, ScreenArt::Height);
+    auto sprite = texture(renderer, SDL_PIXELFORMAT_RGBA32, SpriteWidth, SpriteHeight);
     check(SDL_SetTextureBlendMode(sprite.get(), SDL_BLENDMODE_BLEND));
 
     auto previous = SDL_GetTicks();
@@ -282,9 +280,10 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
     while (running) {
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
+            display.handle(event);
             pads.update(event);
             keyboard.update(event);
-            if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE && !event.key.repeat) {
+            if (event.type == SDL_EVENT_KEY_DOWN && (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_AC_BACK) && !event.key.repeat) {
                 if (session.phase() == RoundPhase::Podium) {
                     session.skipPodium();
                     continue;
@@ -293,7 +292,7 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
                     return ViewResult::MainMenu;
             }
             if (event.type == SDL_EVENT_QUIT ||
-                (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE && !event.key.repeat))
+                (event.type == SDL_EVENT_KEY_DOWN && (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_AC_BACK) && !event.key.repeat))
                 running = false;
             if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) {
                 const auto key = event.key.scancode;
@@ -397,10 +396,10 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
         if (session.phase() == RoundPhase::Podium || session.phase() == RoundPhase::Statistics) {
             const auto picture = podium.render(session);
             check(SDL_UpdateTexture(podiumTexture.get(), nullptr, picture.data(), ScreenArt::Width * 3));
-            check(SDL_RenderClear(renderer.get()));
+            display.beginFrame();
             const SDL_FRect fullScreen{0, 0, ScreenArt::Width, ScreenArt::Height};
-            check(SDL_RenderTexture(renderer.get(), podiumTexture.get(), nullptr, &fullScreen));
-            check(SDL_RenderPresent(renderer.get()));
+            check(SDL_RenderTexture(renderer, podiumTexture.get(), nullptr, &fullScreen));
+            display.present();
             if (smoke) {
                 if (session.roundNumber() != 5 || session.score()[1] != 5 ||
                     session.players()[0].control != 0 || session.players()[1].control != 1)
@@ -446,10 +445,9 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
         const auto rgb = session.showReady() ? ready.render(std::move(frame), level, bank, boardPalette) :
             levelRgb(frame, boardPalette);
         check(SDL_UpdateTexture(background.get(), nullptr, rgb.data(), BoardWidth * 3));
-        check(SDL_SetRenderDrawColor(renderer.get(), 14, 19, 29, 255));
-        check(SDL_RenderClear(renderer.get()));
+        display.beginFrame();
         const SDL_FRect boardBox{BoardX, 0, BoardWidth, BoardHeight};
-        check(SDL_RenderTexture(renderer.get(), background.get(), nullptr, &boardBox));
+        check(SDL_RenderTexture(renderer, background.get(), nullptr, &boardBox));
         const bool independentMode = std::ranges::count_if(session.players(), [](const auto& player) {
             return player.control >= 0;
         }) > 4;
@@ -463,13 +461,13 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
         else if (now < messageUntil)
             message = shortcutMessage;
         if (message.empty()) {
-            check(SDL_RenderTexture(renderer.get(), bar.get(), nullptr, &barBox));
+            check(SDL_RenderTexture(renderer, bar.get(), nullptr, &barBox));
         } else {
             const auto woodRgb = levelRgb(hud.wood(), boardPalette);
             check(SDL_UpdateTexture(wood.get(), nullptr, woodRgb.data(), ScreenWidth * 3));
-            check(SDL_RenderTexture(renderer.get(), wood.get(), nullptr, &barBox));
-            check(SDL_SetRenderDrawColor(renderer.get(), 255, 255, 255, 255));
-            check(SDL_RenderDebugText(renderer.get(), (ScreenWidth - message.size() * SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) / 2.0f,
+            check(SDL_RenderTexture(renderer, wood.get(), nullptr, &barBox));
+            check(SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255));
+            check(SDL_RenderDebugText(renderer, (ScreenWidth - message.size() * SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) / 2.0f,
                                       BoardHeight + 5, message.c_str()));
         }
         std::vector<const Player*> visiblePlayers;
@@ -488,9 +486,9 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
             check(SDL_UpdateTexture(sprite.get(), nullptr, image.data(), SpriteWidth * 4));
             const auto point = player->center();
             const SDL_FRect box{float(BoardX + point.x - 7), float(point.y - 20), SpriteWidth, SpriteHeight};
-            check(SDL_RenderTexture(renderer.get(), sprite.get(), nullptr, &box));
+            check(SDL_RenderTexture(renderer, sprite.get(), nullptr, &box));
         }
-        check(SDL_RenderPresent(renderer.get()));
+        display.present();
         if (smoke && smokeFrame >= 6000)
             throw std::runtime_error("match smoke test did not reach the podium");
         if (!smoke)
@@ -499,18 +497,12 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
     return ViewResult::Closed;
 }
 
-MenuResult choose(Menus& menus, const ExtraScreens& extra, SoundOutput& soundtrack, bool showIntro) {
-    SDL_Window* windowRaw{};
-    SDL_Renderer* rendererRaw{};
-    check(SDL_CreateWindowAndRenderer("LegoBlast", 3 * ScreenArt::Width, 3 * ScreenArt::Height,
-                                     SDL_WINDOW_RESIZABLE, &windowRaw, &rendererRaw));
-    Handle<SDL_Window, SDL_DestroyWindow> window(windowRaw, SDL_DestroyWindow);
-    Handle<SDL_Renderer, SDL_DestroyRenderer> renderer(rendererRaw, SDL_DestroyRenderer);
-    check(SDL_SetRenderLogicalPresentation(renderer.get(), ScreenArt::Width, ScreenArt::Height,
-                                          SDL_LOGICAL_PRESENTATION_INTEGER_SCALE));
-    check(SDL_SetWindowMinimumSize(window.get(), ScreenArt::Width, ScreenArt::Height));
-    auto screen = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, ScreenArt::Width, ScreenArt::Height);
-    auto intro = texture(renderer.get(), SDL_PIXELFORMAT_RGB24, 640, ScreenArt::Height);
+MenuResult choose(Menus& menus, const ExtraScreens& extra, SoundOutput& soundtrack, bool showIntro,
+                  Presentation& display) {
+    display.configure(ScreenArt::Width, ScreenArt::Height, false);
+    auto* renderer = display.renderer();
+    auto screen = texture(renderer, SDL_PIXELFORMAT_RGB24, ScreenArt::Width, ScreenArt::Height);
+    auto intro = texture(renderer, SDL_PIXELFORMAT_RGB24, 640, ScreenArt::Height);
     soundtrack.selectTrack(9);
     soundtrack.tick({}, false, false);
     Gamepads pads;
@@ -526,6 +518,7 @@ MenuResult choose(Menus& menus, const ExtraScreens& extra, SoundOutput& soundtra
     while (true) {
         SDL_Event event{};
         while (SDL_PollEvent(&event)) {
+            display.handle(event);
             pads.update(event);
             if (event.type == SDL_EVENT_QUIT)
                 return MenuResult::Exit;
@@ -555,6 +548,7 @@ MenuResult choose(Menus& menus, const ExtraScreens& extra, SoundOutput& soundtra
             case SDLK_DOWN: result = menus.handle(MenuInput::Down); break;
             case SDLK_LEFT: result = menus.handle(MenuInput::Left); break;
             case SDLK_RIGHT: result = menus.handle(MenuInput::Right); break;
+            case SDLK_AC_BACK:
             case SDLK_ESCAPE: result = menus.handle(MenuInput::Back); break;
             case SDLK_RETURN:
             case SDLK_KP_ENTER:
@@ -600,9 +594,10 @@ MenuResult choose(Menus& menus, const ExtraScreens& extra, SoundOutput& soundtra
                 slide ? extra.slideshow(slide, ++slideTick) : menus.render(++tick);
             auto* texture = opening ? intro.get() : screen.get();
             check(SDL_UpdateTexture(texture, nullptr, picture.data(), (opening ? 640 : ScreenArt::Width) * 3));
-            check(SDL_RenderClear(renderer.get()));
-            check(SDL_RenderTexture(renderer.get(), texture, nullptr, nullptr));
-            check(SDL_RenderPresent(renderer.get()));
+            display.beginFrame();
+            const SDL_FRect content{0, 0, ScreenArt::Width, ScreenArt::Height};
+            check(SDL_RenderTexture(renderer, texture, nullptr, &content));
+            display.present();
         }
         SDL_Delay(2);
     }
@@ -611,6 +606,7 @@ MenuResult choose(Menus& menus, const ExtraScreens& extra, SoundOutput& soundtra
 int launch(const std::filesystem::path& root, const std::filesystem::path& sprites,
            const std::filesystem::path& level, bool smoke, MatchOptions options, std::optional<unsigned> track, bool useMenu, const LiaModel* liaModel) {
     check(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD));
+    Presentation display(ScreenWidth, useMenu ? ScreenArt::Height : ScreenHeight);
     auto arenas = loadArenaList(root / "binary");
     const auto audio = root / "audio";
     std::filesystem::path settings;
@@ -628,14 +624,14 @@ int launch(const std::filesystem::path& root, const std::filesystem::path& sprit
                       useMenu ? 9 : prefs.music, smoke);
     sound.setVolumes(prefs.musicVolume, prefs.effectsVolume);
     if (!useMenu) {
-        view(root, sprites, level, smoke, options, prefs, sound, arenas, liaModel);
+        view(root, sprites, level, smoke, options, prefs, sound, arenas, liaModel, display);
         return 0;
     }
     Menus menus(sprites.parent_path(), arenas, prefs);
     const ExtraScreens extra(sprites.parent_path(), prefs.gradient);
     bool intro = true;
-    while (choose(menus, extra, sound, std::exchange(intro, false)) == MenuResult::Start)
-        if (view(root, sprites, menus.levelFile(), false, menus.options(), prefs, sound, arenas, liaModel, true,
+    while (choose(menus, extra, sound, std::exchange(intro, false), display) == MenuResult::Start)
+        if (view(root, sprites, menus.levelFile(), false, menus.options(), prefs, sound, arenas, liaModel, display, true,
                  menus.sharedKeyboard()) == ViewResult::Closed)
             break;
     if (!settings.empty()) {
@@ -685,7 +681,11 @@ int main(int argc, char* argv[]) {
             const std::string_view number = paths.empty() ? "001" : paths.front();
             if (number.size() != 3 || number.find_first_not_of("0123456789") != number.npos)
                 throw std::runtime_error("expected a three-digit level number");
+#ifdef SDL_PLATFORM_ANDROID
+            const char* base = SDL_GetAndroidInternalStoragePath();
+#else
             const char* base = SDL_GetBasePath();
+#endif
             if (!base)
                 throw std::runtime_error(SDL_GetError());
             const std::filesystem::path root = std::filesystem::path(reinterpret_cast<const char8_t*>(base)) / "data";
@@ -698,6 +698,7 @@ int main(int argc, char* argv[]) {
                                      "[--free] [--teams | --survivor] [--sequential | --random | --dyna] [--lia-model=FILE]");
         return launch(paths[0], paths[1], paths[2], smoke, options, track, useMenu && !smoke, liaModel ? &*liaModel : nullptr);
     } catch (const std::exception& error) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", error.what());
         std::cerr << error.what() << '\n';
         return 1;
     }

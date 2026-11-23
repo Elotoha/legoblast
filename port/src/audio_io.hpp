@@ -2,4 +2,5 @@
 
 #include "assets.hpp"
 
-AudioClip loadAudioClip(const std::filesystem::path& path, int container);
+enum class AudioContainer { Wav, Flac };
+AudioClip loadAudioClip(const std::filesystem::path& path, AudioContainer container);
