@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 project(legoblast_source_port LANGUAGES CXX)
 
-add_library(legoblast_source level.cpp players.cpp sprite.cpp bombs.cpp session.cpp hud.cpp screens.cpp preferences.cpp micro.cpp lia.cpp net_frame.cpp)
+add_library(legoblast_source level.cpp players.cpp sprite.cpp bombs.cpp session.cpp hud.cpp screens.cpp preferences.cpp micro.cpp lia.cpp net_frame.cpp match_art.cpp network_match.cpp)
 target_compile_features(legoblast_source PUBLIC cxx_std_20)
 target_include_directories(legoblast_source PUBLIC .)
 add_executable(legoblast_levels main.cpp)
@@ -42,6 +42,14 @@ if(LEGOBLAST_PLAYER_VIEW)
   target_include_directories(legoblast_players PRIVATE ../src)
   target_compile_definitions(legoblast_players PRIVATE LEGOBLAST_AUDIO_PATH="${CMAKE_CURRENT_SOURCE_DIR}/audio")
   target_link_libraries(legoblast_players PRIVATE legoblast_source SDL3::SDL3)
+endif()
+
+option(LEGOBLAST_PYTHON "Build the desktop library for the Python client" OFF)
+if(LEGOBLAST_PYTHON)
+  find_package(CURL 8.0 REQUIRED)
+  set_target_properties(legoblast_source PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  add_library(legoblast_python SHARED ../python/native.cpp netplay.cpp net_socket_curl.cpp)
+  target_link_libraries(legoblast_python PRIVATE legoblast_source CURL::libcurl)
 endif()
 
 include(CTest)

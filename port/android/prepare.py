@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fetch pinned Android build dependencies and stage the original game assets."""
 
+import argparse
 import hashlib
 from pathlib import Path
 import shutil
@@ -44,21 +45,25 @@ def copy_files(source, destination, names):
         shutil.copyfile(source / name, destination / name)
 
 
-def stage_assets():
+def stage_assets(staging=GENERATED / "assets", *, refresh=False):
     source = ROOT / "amiga/src"
     release = ROOT / "amiga/release_aminet/LegoBlast.lha"
-    staging = GENERATED / "assets"
     with TemporaryDirectory() as scratch_name:
         scratch = Path(scratch_name)
         if shutil.which("bsdtar"):
             extract = ["bsdtar", "-xf", str(release)]
         elif lha := shutil.which("lhasa") or shutil.which("lha"):
             extract = [lha, "x", str(release)]
+        elif seven_zip := shutil.which("7z"):
+            extract = [seven_zip, "x", str(release)]
         else:
-            raise RuntimeError("Install bsdtar or lhasa to extract the original game release")
+            raise RuntimeError("Install bsdtar, lhasa or 7z to extract the original game release")
         subprocess.run(extract, cwd=scratch, check=True, stdout=subprocess.DEVNULL)
         original = {p.name.casefold(): p for p in (scratch / "binary").iterdir()}
-        shutil.rmtree(staging, ignore_errors=True)
+        if refresh:
+            shutil.rmtree(staging, ignore_errors=True)
+        if (staging / "data").exists():
+            raise FileExistsError(staging / "data")
         binary = staging / "data/binary"
         binary.mkdir(parents=True)
         for name in ORIGINAL_BINARY:
@@ -77,6 +82,9 @@ def stage_assets():
         for pattern in ("*.wav", "*.flac"):
             copy_files(ROOT / "port/legoblast/audio", audio,
                        [p.name for p in (ROOT / "port/legoblast/audio").glob(pattern)])
+
+    if not refresh:
+        return
 
     manifest = hashlib.sha256()
     for file in sorted(staging.rglob("*")):
@@ -134,6 +142,12 @@ def stage_icon():
     write_icon("mipmap-xxxhdpi/legoblast.png", 192, 12, b"\0\0\0\xff")
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--data-only", type=Path, help="stage shared assets without downloading Android dependencies")
+    args = parser.parse_args()
+    if args.data_only:
+        stage_assets(args.data_only)
+        return
     GENERATED.mkdir(exist_ok=True)
     sdl = fetch(f"https://github.com/libsdl-org/SDL/releases/download/release-3.2.30/{SDL}.tar.gz",
                 SDL + ".tar.gz", "4c3b09330d866dc52eb65b66259a6684ad387252ca8c57901b3a2b534eb42e3d")
@@ -142,7 +156,7 @@ def main():
             archive.extractall(GENERATED, filter="data")
     fetch(f"https://raw.githubusercontent.com/mackron/dr_libs/{DR_COMMIT}/dr_flac.h",
           "dr_flac.h", "bd569c910a7c465e481fd50af84e2871e81e2154e30ac510d98f953cc0d5a546")
-    stage_assets()
+    stage_assets(refresh=True)
     stage_icon()
 
 

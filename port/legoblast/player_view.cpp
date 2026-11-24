@@ -1,7 +1,8 @@
-#include "hud.hpp"
+#include "match_art.hpp"
 #include "lia.hpp"
 #include "presentation.hpp"
 #include "network_panel.hpp"
+#include "network_match.hpp"
 #include "screens.hpp"
 #include "sound_output.hpp"
 #include "sprite.hpp"
@@ -23,11 +24,6 @@ namespace {
 template<class T, void (*Destroy)(T*)>
 using Handle = std::unique_ptr<T, decltype(Destroy)>;
 using Texture = Handle<SDL_Texture, SDL_DestroyTexture>;
-constexpr int BoardWidth = Width * TileSize;
-constexpr int BoardHeight = Height * TileSize;
-constexpr int ScreenWidth = Hud::Width / 2;
-constexpr int ScreenHeight = BoardHeight + Hud::Height;
-constexpr int BoardX = (ScreenWidth - BoardWidth) / 2;
 enum class ViewResult { Closed, MainMenu, Network };
 
 void check(bool success) {
@@ -196,32 +192,6 @@ Texture texture(SDL_Renderer* renderer, SDL_PixelFormat format, int width, int h
     return result;
 }
 
-Session makeSession(const std::filesystem::path& binary, const std::filesystem::path& level,
-                    MatchOptions options, const std::vector<ArenaEntry>& arenaList) {
-    if (options.arena == ArenaMode::Dynablaster)
-        return Session(loadLevel(binary / "Lego_Level999.dat"), options);
-    std::vector<Level> levels;
-    std::size_t startingIndex = 0;
-    bool found = false;
-    for (const auto& entry : arenaList) {
-        const bool selected = level.filename() == entry.file.filename();
-        if (!entry.enabled && !(selected && options.arena == ArenaMode::Fixed))
-            continue;
-        if (options.arena != ArenaMode::Fixed && !options.teams && entry.number >= 500)
-            continue;
-        if (selected) {
-            startingIndex = levels.size();
-            found = true;
-        }
-        levels.push_back(selected && options.arena == ArenaMode::Fixed ? loadLevel(level) : entry.level);
-    }
-    if (!found && options.arena == ArenaMode::Fixed)
-        return Session(loadLevel(level), options);
-    if (levels.empty())
-        throw std::runtime_error("no enabled arenas in this mode");
-    return Session(std::move(levels), startingIndex, options);
-}
-
 std::string_view matchShortcut(SDL_Scancode key) {
     constexpr std::array music{"M1", "M2", "M3", "M4", "M5", "M6", "M7", "M0"};
     if (key >= SDL_SCANCODE_F3 && key <= SDL_SCANCODE_F10)
@@ -264,54 +234,13 @@ Buttons networkInput(const Controls& inputs) {
     return unpackInput(buttons);
 }
 
-void copyNetworkBoard(Bytes& destination, const Bytes& board, const Bytes& bar) {
-    destination.assign(NetPixels, 0);
-    for (int y = 0; y < BoardHeight; ++y)
-        std::copy_n(board.data() + y * BoardWidth * 3, BoardWidth * 3,
-                    destination.data() + (y * NetWidth + BoardX) * 3);
-    const auto sourceWidth = bar.size() / (Hud::Height * 3);
-    for (int y = 0; y < Hud::Height; ++y)
-        for (int x = 0; x < NetWidth; ++x)
-            std::copy_n(bar.data() + (y * sourceWidth + x * sourceWidth / NetWidth) * 3, 3,
-                        destination.data() + ((BoardHeight + y) * NetWidth + x) * 3);
-}
-
-void copyNetworkSprite(Bytes& destination, const Bytes& sprite, Point center) {
-    for (int sy = 0; sy < SpriteHeight; ++sy)
-        for (int sx = 0; sx < SpriteWidth; ++sx) {
-            const auto x = BoardX + center.x - 7 + sx, y = center.y - 20 + sy;
-            const auto pixel = (sy * SpriteWidth + sx) * 4;
-            if (x >= 0 && x < NetWidth && y >= 0 && y < NetHeight && sprite[pixel + 3])
-                std::copy_n(sprite.data() + pixel, 3, destination.data() + (y * NetWidth + x) * 3);
-        }
-}
-
 ViewResult view(const std::filesystem::path& root, const std::filesystem::path& spriteFile,
          const std::filesystem::path& levelFile, bool smoke, MatchOptions options, Preferences& prefs, SoundOutput& sound,
          const std::vector<ArenaEntry>& arenaList, const LiaModel* liaModel, Presentation& display,
          bool useMenu = false, bool sharedKeyboard = false, NetworkPanel* online = nullptr, bool hosting = false) {
     const auto binary = root / "binary";
     auto session = makeSession(binary, levelFile, options, arenaList);
-    const auto& level = session.arena();
-    const auto bank = readBytes(binary / "Lego_Blocs.dat");
-    auto boardPalette = readLevelPalette(root, level.palette);
-    constexpr std::array<const char*, 3> flameFiles{
-        "Lego_Flam_bib.Dat", "Lego_Flam_Manu.Dat", "Lego_Flam_lazer.Dat",
-    };
-    auto flameBank = readBytes(binary / flameFiles.at(level.flamePalette));
-    auto lastPalette = level.palette, lastFlamePalette = level.flamePalette;
-    auto lastArena = session.arenaIndex();
-    auto terrain = staticLevelIndices(level, bank);
-    auto displayedTiles = level.tiles;
-    const auto sprites = readBytes(spriteFile);
-    const auto indices = readBytes(binary / "Lego_SpritesIndex.dat");
-    const auto palette = readBytes(binary / "Lego_Sprites.col");
-    const auto independent = readBytes(binary / "Lego_Sprites8.dat");
-    const auto independentIndices = readBytes(binary / "Lego_SpritesIndex8.dat");
-    const auto independentPalette = readBytes(binary / "Mec8_normal.col");
-    const Hud hud(spriteFile.parent_path());
-    const PodiumArt podium(spriteFile.parent_path());
-    const ReadyPanel ready(spriteFile.parent_path());
+    MatchArt art(root, spriteFile);
     if (smoke) {
         verifyKeyboardMapping(session);
         ExtraScreens extra(spriteFile.parent_path(), prefs.gradient);
@@ -330,9 +259,7 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
     }
     unsigned smokeFrame = 0;
     LiaGroup lias;
-    std::array<Lia, NetworkPlaces> networkLias{};
-    std::array<unsigned, NetworkPlaces> botAction{};
-    unsigned botTick{}, botRound{};
+    NetworkBots networkBots;
     unsigned microMask = 0;
     NetFrame networkFrame;
     networkFrame.track = prefs.music;
@@ -342,8 +269,7 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
     bool wasModal = false;
     if (hosting) {
         online->link.beginMatch();
-        for (unsigned i = 0; i < NetworkPlaces; ++i)
-            if (online->link.room->roster[i] == 'M') microMask |= 1u << i;
+        microMask = NetworkBots::microMask(online->link.room->roster);
     }
 
     Gamepads pads;
@@ -372,12 +298,7 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
     Uint64 messageUntil = 0;
     std::string shortcutMessage;
     const auto apply = [&](std::string_view command) {
-        if (command == "PREV") session.previousArena();
-        else if (command == "NEXT") session.nextArena();
-        else if (command == "REPLAY") session.replayArena();
-        else if (command == "PAUSE") session.togglePause();
-        else if (command == "SKIP" && session.phase() == RoundPhase::Podium) session.skipPodium();
-        else if (command == "PODIUM") {
+        if (command == "PODIUM") {
             if (session.reviewPodium()) {
                 sound.tick(session.sounds(), false, false, true);
                 if (hosting) networkFrame.sounds.insert(networkFrame.sounds.end(), session.sounds().begin(), session.sounds().end());
@@ -398,6 +319,8 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
             shortcutMessage = requested ? "MUSIC " + std::to_string(requested) : "MUSIC OFF";
             if (!available) shortcutMessage += " UNAVAILABLE";
             messageUntil = SDL_GetTicks() + 2000;
+        } else {
+            applyMatchCommand(session, command);
         }
     };
     const auto broadcast = [&] {
@@ -460,25 +383,7 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
             if (online && online->modal()) input = {};
             if (hosting) {
                 input = online->link.humanInputs(networkInput(input));
-                const auto tick = session.elapsed();
-                if (tick < botTick || botRound != session.roundNumber()) {
-                    for (auto& bot : networkLias) bot.reset();
-                    botAction.fill(0);
-                }
-                botRound = session.roundNumber();
-                botTick = tick;
-                if (liaPlaying(session) && !session.paused()) {
-                    for (unsigned i = 0; i < NetworkPlaces; ++i) {
-                        const auto& player = session.players()[i];
-                        if (!player.dead && player.activation == Activation::Hidden) {
-                            input[i].fire = true;
-                        } else if (online->link.room->roster[i] == 'L' && liaAlive(player)) {
-                            const auto step = (tick + LiaActionTicks - i) % LiaActionTicks;
-                            if (!step) botAction[i] = networkLias[i].choose(session, i, liaModel);
-                            input[i] = liaButtons(botAction[i], step);
-                        }
-                    }
-                }
+                networkBots.fill(session, input, online->link.room->roster, liaModel);
             } else if ((!online || !online->modal()) && lias.read(session, input, summon, liaModel)) {
                 shortcutMessage = "LIA";
                 messageUntil = SDL_GetTicks() + 2000;
@@ -507,7 +412,7 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
                        session.phase() == RoundPhase::Podium || session.phase() == RoundPhase::Statistics);
         }
         if (session.phase() == RoundPhase::Podium || session.phase() == RoundPhase::Statistics) {
-            const auto picture = podium.render(session);
+            const auto picture = art.podium(session);
             check(SDL_UpdateTexture(podiumTexture.get(), nullptr, picture.data(), ScreenArt::Width * 3));
             display.beginFrame();
             const SDL_FRect fullScreen{0, 0, ScreenArt::Width, ScreenArt::Height};
@@ -523,55 +428,18 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
                     session.players()[0].control != 0 || session.players()[1].control != 1)
                     throw std::runtime_error("match smoke test lost the score or controller");
                 session.skipPodium();
-                podium.render(session);
+                art.podium(session);
                 break;
             }
             SDL_Delay(2);
             continue;
         }
-        const auto& bombs = session.bombs();
-        const auto& map = session.map();
-        const auto arenaChanged = lastArena != session.arenaIndex();
-        lastArena = session.arenaIndex();
-        if (lastPalette != level.palette) {
-            boardPalette = readLevelPalette(root, level.palette);
-            lastPalette = level.palette;
-        }
-        if (lastFlamePalette != level.flamePalette) {
-            flameBank = readBytes(binary / flameFiles.at(level.flamePalette));
-            lastFlamePalette = level.flamePalette;
-        }
-        if (arenaChanged || displayedTiles != bombs.level().tiles) {
-            displayedTiles = bombs.level().tiles;
-            terrain = staticLevelIndices(bombs.level(), bank);
-        }
-        auto frame = terrain;
-        for (const auto& bumper : session.bumpers())
-            if (bumper.state >= 0 && map.at(bumper.cell.x, bumper.cell.y).visible == 27)
-                drawLevelBlock(frame, bumper.cell, bumper.frame + bumper.imageOffset, level.blocks[0], bank);
-        for (const auto& closing : session.closingFrames())
-            drawLevelPattern(frame, closing.tile.x * 16, closing.tile.y * 16, 16, closing.image, bank);
-        for (const auto& block : bombs.brokenBlocks())
-            drawLevelPattern(frame, block.cell.x * 8, block.cell.y * 8, 16, block.frame, bank);
-        for (int y = 0; y < Height * 2; ++y)
-            for (int x = 0; x < Width * 2; ++x)
-                if (const auto mask = bombs.flameMask(x, y); mask && !std::as_const(map).at(x, y).visible)
-                    drawLevelPattern(frame, x * 8, y * 8, 8, mask, flameBank);
-        for (const auto& bomb : bombs.bombs())
-            if (bomb.active)
-                drawLevelPattern(frame, bomb.cell.x * 8, bomb.cell.y * 8, 16, bomb.image(), bank);
-        const auto rgb = session.showReady() ? ready.render(std::move(frame), level, bank, boardPalette) :
-            levelRgb(frame, boardPalette);
+        const auto rgb = art.board(session);
         check(SDL_UpdateTexture(background.get(), nullptr, rgb.data(), BoardWidth * 3));
         display.beginFrame();
         const SDL_FRect boardBox{BoardX, 0, BoardWidth, BoardHeight};
         check(SDL_RenderTexture(renderer, background.get(), nullptr, &boardBox));
-        const bool independentMode = std::ranges::count_if(session.players(), [](const auto& player) {
-            return player.control >= 0;
-        }) > 4;
         const SDL_FRect barBox{0, BoardHeight, ScreenWidth, Hud::Height};
-        const auto barRgb = levelRgb(hud.render(session, independentMode), boardPalette);
-        check(SDL_UpdateTexture(bar.get(), nullptr, barRgb.data(), Hud::Width * 3));
         std::string message;
         if (session.paused()) message = "PAUSE";
         else if (session.phase() == RoundPhase::AwaitingPlayers && session.retrying())
@@ -580,34 +448,23 @@ ViewResult view(const std::filesystem::path& root, const std::filesystem::path& 
             message = shortcutMessage;
         const bool capture = hosting && now >= nextBroadcast;
         if (message.empty()) {
+            const auto barRgb = art.bar(session, false);
+            check(SDL_UpdateTexture(bar.get(), nullptr, barRgb.data(), Hud::Width * 3));
             check(SDL_RenderTexture(renderer, bar.get(), nullptr, &barBox));
-            if (capture) copyNetworkBoard(networkFrame.pixels, rgb, barRgb);
+            if (capture) copyMatchBoard(networkFrame.pixels, rgb, barRgb);
         } else {
-            const auto woodRgb = levelRgb(hud.wood(), boardPalette);
-            if (capture) copyNetworkBoard(networkFrame.pixels, rgb, woodRgb);
+            const auto woodRgb = art.bar(session, true);
+            if (capture) copyMatchBoard(networkFrame.pixels, rgb, woodRgb);
             check(SDL_UpdateTexture(wood.get(), nullptr, woodRgb.data(), ScreenWidth * 3));
             check(SDL_RenderTexture(renderer, wood.get(), nullptr, &barBox));
             check(SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255));
             check(SDL_RenderDebugText(renderer, (ScreenWidth - message.size() * SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE) / 2.0f,
                                       BoardHeight + 5, message.c_str()));
         }
-        std::vector<const Player*> visiblePlayers;
-        for (const auto& player : session.players())
-            if (player.visible && !session.paused())
-                visiblePlayers.push_back(&player);
-        std::stable_sort(visiblePlayers.begin(), visiblePlayers.end(), [](const auto* a, const auto* b) {
-            return a->sprite.y < b->sprite.y;
-        });
-        for (const auto* player : visiblePlayers) {
-            const auto frame = player->frame + player->imageOffset;
-            const auto slot = static_cast<unsigned>(player - session.players().data());
-            const auto image = independentMode ?
-                independentSprite(independent, independentIndices, independentPalette, slot, frame) :
-                attachedSprite(sprites, indices, palette, player->frameBase + frame);
-            check(SDL_UpdateTexture(sprite.get(), nullptr, image.data(), SpriteWidth * 4));
-            const auto point = player->center();
-            if (capture) copyNetworkSprite(networkFrame.pixels, image, point);
-            const SDL_FRect box{float(BoardX + point.x - 7), float(point.y - 20), SpriteWidth, SpriteHeight};
+        for (const auto& player : art.players(session)) {
+            check(SDL_UpdateTexture(sprite.get(), nullptr, player.image.data(), SpriteWidth * 4));
+            if (capture) blendMatchPlayer(networkFrame.pixels, player);
+            const SDL_FRect box{float(player.topLeft.x), float(player.topLeft.y), SpriteWidth, SpriteHeight};
             check(SDL_RenderTexture(renderer, sprite.get(), nullptr, &box));
         }
         if (capture) {

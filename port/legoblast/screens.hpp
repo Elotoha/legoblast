@@ -59,6 +59,8 @@ struct ArenaEntry {
     bool enabled{true};
 };
 std::vector<ArenaEntry> loadArenaList(const std::filesystem::path& binary);
+Session makeSession(const std::filesystem::path& binary, const std::filesystem::path& level,
+                    MatchOptions options, const std::vector<ArenaEntry>& arenaList);
 
 enum class MenuInput { Up, Down, Left, Right, Fire, Back };
 enum class MenuResult { Continue, Start, Network, Exit };

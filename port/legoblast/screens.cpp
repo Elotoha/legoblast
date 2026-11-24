@@ -365,6 +365,32 @@ std::vector<ArenaEntry> loadArenaList(const std::filesystem::path& binary) {
     return arenas;
 }
 
+Session makeSession(const std::filesystem::path& binary, const std::filesystem::path& level,
+                    MatchOptions options, const std::vector<ArenaEntry>& arenaList) {
+    if (options.arena == ArenaMode::Dynablaster)
+        return Session(loadLevel(binary / "Lego_Level999.dat"), options);
+    std::vector<Level> levels;
+    std::size_t startingIndex = 0;
+    bool found = false;
+    for (const auto& entry : arenaList) {
+        const bool selected = level.filename() == entry.file.filename();
+        if (!entry.enabled && !(selected && options.arena == ArenaMode::Fixed))
+            continue;
+        if (options.arena != ArenaMode::Fixed && !options.teams && entry.number >= 500)
+            continue;
+        if (selected) {
+            startingIndex = levels.size();
+            found = true;
+        }
+        levels.push_back(selected && options.arena == ArenaMode::Fixed ? loadLevel(level) : entry.level);
+    }
+    if (!found && options.arena == ArenaMode::Fixed)
+        return Session(loadLevel(level), options);
+    if (levels.empty())
+        throw std::runtime_error("no enabled arenas in this mode");
+    return Session(std::move(levels), startingIndex, options);
+}
+
 Menus::Menus(const std::filesystem::path& binary, std::vector<ArenaEntry>& arenas, const Preferences& prefs)
     : main_(binary / "MENUA.raw", binary / "MENUA.col"), optionsArt_(binary / "MENUB.raw", binary / "MENUB.col"),
       boxes_(readBytes(binary / "mainmenubox.dat")), font_(readBytes(binary / "tinytxt8.font")), arenas_(arenas),

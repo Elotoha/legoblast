@@ -1,0 +1,71 @@
+name: LegoBlast Python Windows
+
+on:
+  push:
+    paths:
+      - 'port/python/**'
+      - 'port/legoblast/**'
+      - 'port/android/prepare.py'
+      - '.github/workflows/legoblast-python.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /port/python/
+            /port/legoblast/
+            /port/android/prepare.py
+            /amiga/release_aminet/LegoBlast.lha
+            /amiga/src/LegoBlast.Prefs
+            /amiga/src/LEGO_WORLDS/*.col
+            /amiga/src/binary/Lego_Level*.dat
+            /amiga/src/binary/Lego_Flam_*.Dat
+            /amiga/src/binary/Lego_Blocs.dat
+            /amiga/src/binary/bobs_nus22.col
+            /amiga/src/binary/Lego_Sprites.col
+            /amiga/src/binary/Lego_SpritesIndex.dat
+            /amiga/src/binary/Lego_Sprites8.dat
+            /amiga/src/binary/Lego_SpritesIndex8.dat
+            /amiga/src/binary/Mec8_normal.col
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compiler le moteur partagé
+        shell: pwsh
+        run: |
+          $toolchain = Join-Path $env:VCPKG_INSTALLATION_ROOT 'scripts/buildsystems/vcpkg.cmake'
+          cmake -S port/legoblast -B build -G 'Visual Studio 17 2022' -A x64 "-DCMAKE_TOOLCHAIN_FILE=$toolchain" '-DVCPKG_TARGET_TRIPLET=x64-windows-static' '-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded$<$<CONFIG:Debug>:Debug>' -DLEGOBLAST_PYTHON=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build -C Release --output-on-failure
+      - name: Préparer le jeu Python autonome
+        shell: pwsh
+        run: |
+          python -m pip install -r port/python/requirements.txt pyinstaller==6.16.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m PyInstaller --noconfirm --onedir --name LegoBlast-Python --add-binary 'build/Release/legoblast_python.dll:.' port/python/play.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python port/android/prepare.py --data-only dist/LegoBlast-Python
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item port/python/README.md dist/LegoBlast-Python/
+      - name: Vérifier le jeu emballé
+        shell: pwsh
+        run: |
+          $env:SDL_VIDEODRIVER = 'dummy'
+          $env:SDL_AUDIODRIVER = 'dummy'
+          & .\dist\LegoBlast-Python\LegoBlast-Python.exe --smoke
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LegoBlast-Python-Windows-x64
+          path: dist/LegoBlast-Python/
+          if-no-files-found: error
