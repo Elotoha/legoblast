@@ -284,7 +284,8 @@ def play(game, audio, window):
                                 playing = False
                 previous_pad = mask
             else:
-                inputs = [] if panel.visible(state) else inputs_for(held | pressed, joysticks, state.sharedKeyboard)
+                shared = state.mode == LOCAL and state.sharedKeyboard
+                inputs = [] if panel.visible(state) else inputs_for(held | pressed, joysticks, shared)
                 game.tick(inputs, summons if inputs else 0)
             pressed.clear()
             summons = 0
